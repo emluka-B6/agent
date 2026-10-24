@@ -1,0 +1,724 @@
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --border: #d9dee6;
+  --text: #1b2430;
+  --muted: #667085;
+  --accent: #2563eb;
+  --danger: #b42318;
+  --danger-bg: #fef3f2;
+  --small: #067647;
+  --medium: #b54708;
+  --large: #b42318;
+  --radius: 10px;
+  /* Set from the toolbar; see src/fontSizes.ts. */
+  --font-ui: 14px;
+  --font-code: 12px;
+  --font-graph: 12px;
+  color-scheme: light;
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: var(--font-ui);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: #b8c0cc;
+  background: #fafbfc;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+button.danger {
+  border-color: #f6c9c5;
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+input[type="search"],
+select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: calc(var(--font-ui) + 2px);
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  font-size: calc(var(--font-ui) - 2px);
+  color: var(--muted);
+}
+
+.toolbar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-button svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.settings-menu {
+  position: relative;
+  /* Keeps the popover (anchored to the right edge) inside the viewport when
+     the toolbar wraps on narrow screens. */
+  margin-left: auto;
+}
+
+.settings-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  list-style: none;
+}
+
+.settings-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-menu > summary:hover,
+.settings-menu[open] > summary {
+  border-color: #b8c0cc;
+  background: #fafbfc;
+}
+
+.settings-menu[open] > summary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.settings-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: min(264px, calc(100vw - 32px));
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.16);
+}
+
+.settings-title {
+  margin: 0;
+  font-size: calc(var(--font-ui) + 1px);
+  font-weight: 600;
+}
+
+.settings-note {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: calc(var(--font-ui) - 3px);
+  line-height: 1.4;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 8px;
+  margin: 10px 0;
+}
+
+.settings-row label {
+  color: var(--muted);
+  font-size: calc(var(--font-ui) - 2px);
+}
+
+.settings-row output {
+  color: var(--text);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--font-code);
+}
+
+.settings-row input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.settings-reset {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.plan-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: calc(var(--font-ui) - 2px);
+  color: var(--muted);
+}
+
+.plan-picker select {
+  max-width: 52ch;
+  text-overflow: ellipsis;
+}
+
+.plan-picker.empty {
+  font-style: italic;
+}
+
+.status {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f2f4f7;
+  color: var(--muted);
+  font-size: calc(var(--font-ui) - 3px);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-approved {
+  background: #ecfdf3;
+  color: var(--small);
+}
+
+.status-needs_improvement {
+  background: #fffaeb;
+  color: var(--medium);
+}
+
+.status-max_iterations_reached {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.dirty {
+  color: var(--medium);
+  font-size: calc(var(--font-ui) - 2px);
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 400px;
+  gap: 12px;
+  padding: 12px 16px;
+  height: calc(100vh - 130px);
+  min-height: 480px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-header h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-ui);
+}
+
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.hint {
+  font-size: calc(var(--font-ui) - 3px);
+  color: var(--muted);
+}
+
+.count {
+  margin-left: 4px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.filters {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.filters input {
+  flex: 1;
+  min-width: 0;
+}
+
+.list-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px 8px;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: calc(var(--font-ui) - 2px);
+}
+
+.task-list {
+  flex: 1;
+  margin: 0;
+  padding: 0 8px 12px;
+  overflow: auto;
+  list-style: none;
+}
+
+.task-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 8px;
+}
+
+.task-list li.selected {
+  background: #eef4ff;
+}
+
+.task-row {
+  display: grid;
+  flex: 1;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.task-id {
+  color: var(--accent);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--font-code);
+}
+
+.task-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: calc(var(--font-ui) - 4px);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.badge-small {
+  background: #ecfdf3;
+  color: var(--small);
+}
+
+.badge-medium {
+  background: #fffaeb;
+  color: var(--medium);
+}
+
+.badge-large {
+  background: var(--danger-bg);
+  color: var(--large);
+}
+
+.empty {
+  padding: 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error-text {
+  color: var(--danger);
+}
+
+.graph-canvas {
+  flex: 1;
+  min-height: 320px;
+  outline: none;
+}
+
+/* The selected dependency lines use the same accent as the border of a selected
+   task node and a thicker stroke, so the relation stands out. The arrowheads of
+   selected edges are colored in DependencyGraph.tsx because React Flow renders
+   markers through shared <defs>. */
+.react-flow .react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+/* Edges are not selectable through React Flow (see DependencyGraph.tsx):
+   clicking a line selects every line attached to the nearest task port, so the
+   line still needs a pointer cursor. */
+.react-flow .react-flow__edge:not(.inactive) {
+  cursor: pointer;
+}
+
+/* Maximized panels cover the whole page; the app sets --node-width/-height
+   from the graph font size so React Flow and the DOM nodes stay in sync. */
+.panel.maximized {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: none;
+  border-radius: 0;
+  box-shadow: 0 24px 60px rgba(16, 24, 40, 0.28);
+}
+
+.panel.maximized .graph-canvas {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.detail-panel.maximized pre.code,
+.detail-panel.maximized pre.prompt {
+  max-height: 50vh;
+}
+
+.task-node {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: var(--node-width, 236px);
+  min-height: var(--node-height, 88px);
+  padding: 8px 10px;
+  background: #fff;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+
+.task-node.is-selected,
+.react-flow__node.selected .task-node {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.task-node.complexity-small {
+  border-left: 6px solid var(--small);
+}
+
+.task-node.complexity-medium {
+  border-left: 6px solid var(--medium);
+}
+
+.task-node.complexity-large {
+  border-left: 6px solid var(--large);
+}
+
+.task-node-id {
+  color: var(--accent);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: calc(var(--font-graph) - 1px);
+}
+
+.task-node-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--font-graph);
+  font-weight: 600;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.task-node-meta {
+  color: var(--muted);
+  font-size: calc(var(--font-graph) - 2px);
+  text-transform: uppercase;
+}
+
+.detail-scroll {
+  flex: 1;
+  padding: 12px 14px;
+  overflow: auto;
+}
+
+.detail-scroll h3 {
+  margin: 16px 0 6px;
+  color: var(--muted);
+  font-size: calc(var(--font-ui) - 3px);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.detail-scroll h3:first-child {
+  margin-top: 0;
+}
+
+.prompt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+pre.code,
+pre.prompt {
+  max-height: 320px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--font-code);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chips li {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3538cd;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--font-code);
+}
+
+.bullets {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.bullets li {
+  margin: 4px 0;
+  line-height: 1.45;
+}
+
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 24px;
+}
+
+.section {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.section summary {
+  padding: 10px 14px;
+  font-size: calc(var(--font-ui) - 1px);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.section-body {
+  padding: 0 14px 14px;
+  line-height: 1.5;
+}
+
+.section-body h4 {
+  margin: 12px 0 4px;
+  color: var(--muted);
+  font-size: calc(var(--font-ui) - 3px);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.banner {
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: calc(var(--font-ui) - 1px);
+}
+
+.banner.error {
+  border: 1px solid #f6c9c5;
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.banner.info {
+  border: 1px solid #b2ddff;
+  background: #eff8ff;
+  color: #175cd3;
+}
+
+.empty-state {
+  padding: 48px;
+  text-align: center;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  padding: 18px 20px;
+  overflow: auto;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(16, 24, 40, 0.2);
+}
+
+.modal h2 {
+  margin-top: 0;
+  font-size: calc(var(--font-ui) + 4px);
+}
+
+.strategy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.strategy legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: calc(var(--font-ui) - 2px);
+}
+
+.strategy label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: calc(var(--font-ui) - 1px);
+}
+
+.preview {
+  padding: 8px 12px;
+  margin-top: 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: calc(var(--font-ui) - 1px);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+@media (max-width: 1100px) {
+  .workspace {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .graph-canvas {
+    height: 420px;
+  }
+}
+
