@@ -22,6 +22,20 @@ DEFAULT_MAX_RESEARCH_CALLS = 2
 #: Upper bound on focused search queries the planner may request at once.
 MAX_FOLLOW_UP_QUERIES = 3
 
+#: Soft upper bound on the number of subtasks in one plan. The planner prompt
+#: states it, the critic blocks plans that exceed it, and the planner node warns
+#: when a generated plan is larger. The bound keeps a plan reviewable and keeps
+#: the structured response inside the provider's output-token budget.
+DEFAULT_MAX_SUBTASKS = 10
+
+#: Target length, in characters, of one self-contained implementation prompt.
+#: The prompts dominate the plan JSON and the revision payload, and an oversized
+#: response is truncated by the provider before it can be parsed.
+TARGET_IMPLEMENTATION_PROMPT_CHARS = 1500
+
+#: Length at which a prompt is reported as oversized (twice the target).
+OVERSIZED_IMPLEMENTATION_PROMPT_CHARS = 2 * TARGET_IMPLEMENTATION_PROMPT_CHARS
+
 DEFAULT_MAX_SEARCH_RESULTS = 5
 DEFAULT_MAX_RETRIES = 3
 SUPPORTED_PROVIDERS = ("openai", "deepseek")

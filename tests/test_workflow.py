@@ -12,12 +12,18 @@ from issue_planner.graph import run_agent
 from issue_planner.models import (
     Critique,
     ImplementationPlan,
+    PlanRevision,
     ResearchSummary,
     Source,
     SubTask,
     WorkflowState,
 )
-from issue_planner.nodes import planner_node, research_node, route_after_planner
+from issue_planner.nodes import (
+    critic_node,
+    planner_node,
+    research_node,
+    route_after_planner,
+)
 from issue_planner.output import build_document
 
 
@@ -36,6 +42,34 @@ def make_plan(research_requests: list[str] | None = None) -> ImplementationPlan:
         ],
         definition_of_done=["Rate limiting is enabled"],
         research_requests=list(research_requests or []),
+    )
+
+
+def make_two_task_plan() -> ImplementationPlan:
+    """Return a plan with a dependency so revisions can be checked end to end."""
+    return ImplementationPlan(
+        summary="Harden the public API",
+        assumptions=["Python 3.10"],
+        subtasks=[
+            SubTask(
+                id="T1",
+                title="Add a token bucket",
+                description="Introduce a token bucket limiter.",
+                implementation_prompt="Add a token bucket limiter with tests.",
+                acceptance_criteria=["Requests above the limit are rejected"],
+                verification="pytest tests/test_ratelimit.py",
+            ),
+            SubTask(
+                id="T2",
+                title="Wire the limiter into the API",
+                description="Apply the limiter to the public routes.",
+                implementation_prompt="Wire the limiter into the API middleware.",
+                depends_on=["T1"],
+                acceptance_criteria=["Limited routes return 429"],
+                verification="pytest tests/test_api.py",
+            ),
+        ],
+        definition_of_done=["Rate limiting is enabled"],
     )
 
 
@@ -394,3 +428,220 @@ def test_artifact_records_the_research_budget_without_control_fields() -> None:
     assert document["metadata"]["max_research_calls"] == 2
     assert "research_requests" not in document
     assert "research_requests" not in document["subtasks"][0]
+
+
+def test_planner_node_requests_a_patch_when_a_plan_already_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_invoke_structured(
+        _model: object,
+        schema: object,
+        _provider: str,
+        messages: object,
+        _label: str,
+        _max_retries: int,
+    ) -> PlanRevision:
+        captured["schema"] = schema
+        captured["system"] = messages[0].content  # type: ignore[index]
+        return PlanRevision(
+            summary="Revised summary",
+            upsert_subtasks=[
+                SubTask(
+                    id="T2",
+                    title="Add API tests",
+                    description="Cover the limiter with API tests.",
+                    implementation_prompt="Add API tests for the limiter.",
+                    depends_on=["T1"],
+                    acceptance_criteria=["Limited routes return 429"],
+                    verification="pytest tests/test_api.py",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(nodes_module, "invoke_structured", fake_invoke_structured)
+
+    result = planner_node(
+        make_state(
+            plan=make_two_task_plan(),
+            critique=Critique(
+                approved=False,
+                summary="T2 is too broad",
+                blocking_issues=["T2 must be split"],
+            ),
+            research_calls=1,
+        ),
+        model=object(),  # type: ignore[arg-type]
+        provider="openai",
+        max_retries=1,
+    )
+
+    assert captured["schema"] is PlanRevision
+    assert "Revision mode:" in captured["system"]
+    assert [task.id for task in result["plan"].subtasks] == ["T1", "T2"]
+    assert result["plan"].subtasks[1].title == "Add API tests"
+    assert result["plan"].summary == "Revised summary"
+
+
+def test_planner_node_applies_removals_and_additions_from_a_patch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_invoke_structured(*_args: object, **_kwargs: object) -> PlanRevision:
+        return PlanRevision(
+            upsert_subtasks=[
+                SubTask(
+                    id="T3",
+                    title="Document the limit",
+                    description="Document the new limit.",
+                    implementation_prompt="Document the new limit in the README.",
+                    depends_on=["T1"],
+                    acceptance_criteria=["The docs mention the limit"],
+                    verification="pytest tests/test_docs.py",
+                )
+            ],
+            remove_subtasks=["T2"],
+        )
+
+    monkeypatch.setattr(nodes_module, "invoke_structured", fake_invoke_structured)
+
+    result = planner_node(
+        make_state(plan=make_two_task_plan()),
+        model=object(),  # type: ignore[arg-type]
+        provider="openai",
+        max_retries=1,
+    )
+
+    assert [task.id for task in result["plan"].subtasks] == ["T1", "T3"]
+    assert result["plan"].subtasks[0].title == "Add a token bucket"
+
+
+def test_planner_node_warns_and_keeps_the_plan_for_an_empty_revision(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        nodes_module, "invoke_structured", lambda *_a, **_k: PlanRevision()
+    )
+
+    plan = make_two_task_plan()
+    result = planner_node(
+        make_state(plan=plan),
+        model=object(),  # type: ignore[arg-type]
+        provider="openai",
+        max_retries=1,
+    )
+
+    assert [task.id for task in result["plan"].subtasks] == ["T1", "T2"]
+    assert result["plan"].summary == plan.summary
+    assert "empty revision" in capsys.readouterr().err
+
+
+def test_planner_node_keeps_the_previous_plan_when_a_patch_removes_everything(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        nodes_module,
+        "invoke_structured",
+        lambda *_a, **_k: PlanRevision(remove_subtasks=["T1", "T2"]),
+    )
+
+    result = planner_node(
+        make_state(plan=make_two_task_plan()),
+        model=object(),  # type: ignore[arg-type]
+        provider="openai",
+        max_retries=1,
+    )
+
+    assert [task.id for task in result["plan"].subtasks] == ["T1", "T2"]
+    assert result["research_requests"] == []
+    assert "could not apply the plan revision" in capsys.readouterr().err
+
+
+def test_planner_messages_carry_the_research_status_and_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_invoke_structured(
+        _model: object,
+        _schema: object,
+        _provider: str,
+        messages: object,
+        _label: str,
+        _max_retries: int,
+    ) -> ImplementationPlan:
+        captured["messages"] = messages
+        return make_plan()
+
+    monkeypatch.setattr(nodes_module, "invoke_structured", fake_invoke_structured)
+
+    planner_node(
+        make_state(
+            research=ResearchSummary(recommended_approach="Token buckets"),
+            sources=[
+                Source(title="Tavily docs", url="https://example.com/tavily")
+            ],
+            research_error="Web search failed: timeout",
+            research_calls=2,
+        ),
+        model=object(),  # type: ignore[arg-type]
+        provider="openai",
+        max_retries=1,
+        max_research_calls=2,
+    )
+
+    rendered = "\n".join(
+        str(message.content) for message in captured["messages"]  # type: ignore[union-attr]
+    )
+    assert "[S1] Tavily docs (https://example.com/tavily)" in rendered
+    assert "limitation: Web search failed: timeout" in rendered
+    assert "budget exhausted (2 of 2)" in rendered
+
+
+def test_critic_node_receives_the_previous_review_and_the_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_invoke_structured(
+        _model: object,
+        schema: object,
+        _provider: str,
+        messages: object,
+        _label: str,
+        _max_retries: int,
+    ) -> Critique:
+        captured["schema"] = schema
+        captured["messages"] = messages
+        return Critique(approved=True, summary="Ready to execute")
+
+    monkeypatch.setattr(nodes_module, "invoke_structured", fake_invoke_structured)
+
+    result = critic_node(
+        make_state(
+            plan=make_two_task_plan(),
+            critique=Critique(
+                approved=False,
+                summary="Not ready",
+                blocking_issues=["T2 must be split"],
+            ),
+            evaluations=1,
+            research_calls=2,
+        ),
+        model=object(),  # type: ignore[arg-type]
+        provider="openai",
+        max_retries=1,
+        max_iterations=2,
+        max_research_calls=2,
+    )
+
+    rendered = "\n".join(
+        str(message.content) for message in captured["messages"]  # type: ignore[union-attr]
+    )
+    assert "T2 must be split" in rendered
+    assert "this is the final review" in rendered
+    assert "budget exhausted (2 of 2)" in rendered
+    assert result["evaluations"] == 2
+    assert result["approved"] is True

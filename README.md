@@ -18,8 +18,8 @@ issue_planner/
   prompts.py              Shared prompt templates rendered per domain
   llm.py                  Model factory, structured output, retries
   research.py             Search-result normalisation and prompt formatting
-  plan_repair.py          Subtask ID and dependency normalisation
-  plan_editor.py          Subtask removal/editing with dependency repair
+  plan_repair.py          Subtask ID/dependency repair and size warnings
+  plan_editor.py          Subtask insert/split/merge/remove and plan revisions
   nodes.py                research / planner / critic LangGraph nodes
   graph.py                Graph assembly and run_agent()
   progress.py             Console progress and partial-artifact persistence
@@ -29,11 +29,12 @@ issue_planner/
     dist/                 Built React assets (generated, gitignored)
 frontend/                 React + Vite viewer with a React Flow DAG
 tests/
-  test_plan_editor.py     Unit tests for plan editing
+  test_plan_editor.py     Unit tests for plan editing and revisions
+  test_plan_repair.py     Dependency repair and plan size warnings
   test_prompts.py         Domain profiles and shared prompt templates
   test_progress.py        Console progress and partial artifacts
   test_web.py             API tests for the viewer
-  test_workflow.py        Follow-up research routing and budgets
+  test_workflow.py        Follow-up research routing, budgets, and revisions
 ```
 
 `agent.py` re-exports the public helpers (`build_model`, `build_graph`,
@@ -66,9 +67,32 @@ research -> planner -> critic
    workflow returns to research before the next critic review. Research requests
    are workflow control data and are not written to the output artifact. If web
    research is skipped or unavailable, requests are ignored and the workflow
-   continues to the critic.
-3. **critic** reviews the plan. If it finds blocking issues, the planner revises
-   the plan. The loop is bounded by `--max-iterations`.
+   continues to the critic. The planner sees the research limitation, how much
+   follow-up research budget remains, a numbered title/URL list of the sources,
+   and (on revisions) the previous review.
+
+   Plans follow a size policy. A subtask is `small` (one file or artifact, one
+   behaviour), `medium` (two to five files or artifacts), or `large` (more than
+   five files, a schema or contract change, or several independent behaviours);
+   `large` work must be split, a plan holds at most `DEFAULT_MAX_SUBTASKS` (8)
+   subtasks, and each `implementation_prompt` targets about 1,500 characters.
+   The planner node warns on stderr when a generated plan exceeds those limits,
+   and the critic blocks plans that are not sized accordingly.
+
+   The first pass generates the complete plan. Every later pass — after
+   follow-up research or a critic review — returns a `PlanRevision` patch
+   instead: `upsert_subtasks` replaces subtasks by id (or adds new ones),
+   `remove_subtasks` deletes them with dependency rewiring, and the optional
+   top-level fields replace the summary, assumptions, open questions, or
+   definition of done. Untouched subtasks keep their ids and content, so a
+   revision costs a fraction of a full regeneration and ids stay stable in the
+   viewer.
+3. **critic** reviews the plan. It receives the research summary, the numbered
+   source list, the research limitation and budget, its position in the revision
+   budget (`review 1 of 2`, `final review`), and its own previous review, so it
+   can confirm that earlier blocking issues are resolved and report regressions.
+   If it finds blocking issues, the planner revises the plan with a patch. The
+   loop is bounded by `--max-iterations`.
 
 The final plan is written atomically to a uniquely named output file in
 `outputs/` as JSON by default. The name is derived from a hash (for example
@@ -314,6 +338,14 @@ A removal can follow three strategies:
 Edits are recorded under `metadata.edits`. `Save` rewrites the original `.json`
 artifact atomically, and `Export` downloads the edited plan as JSON or Markdown.
 At least one subtask must remain in the plan.
+
+The viewer UI currently exposes removal, but the same UI-agnostic module
+(`issue_planner/plan_editor.py`) also provides `insert_subtask`,
+`split_subtask`, and `merge_subtasks` for tooling that needs to change the
+number of subtasks. They keep ids and `depends_on` consistent: a split chains
+the replacement parts and re-points dependents to the last part, and a merge
+unions files, acceptance criteria, and risks under the earliest id. The planner
+reuses the same module through `apply_revision` to apply `PlanRevision` patches.
 
 ### API
 

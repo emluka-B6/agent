@@ -111,6 +111,68 @@ class ImplementationPlan(BaseModel):
     )
 
 
+class PlanRevision(BaseModel):
+    """A patch that updates an existing plan instead of re-emitting it.
+
+    The planner asks for this schema on every run that already has a plan (after
+    follow-up research or a critic review). Each field is optional: ``None``
+    means "keep the current value", while an empty list means "replace the
+    current value with an empty list". Subtasks that are not mentioned keep their
+    ids and content, which makes revisions cheap and stable.
+    """
+
+    summary: str | None = Field(
+        default=None, description="Replacement summary, only when it changed."
+    )
+    assumptions: list[str] | None = Field(
+        default=None, description="Replacement assumptions, only when they changed."
+    )
+    definition_of_done: list[str] | None = Field(
+        default=None,
+        min_length=1,
+        description="Replacement definition of done, only when it changed.",
+    )
+    open_questions: list[str] | None = Field(
+        default=None, description="Replacement open questions, only when they changed."
+    )
+    upsert_subtasks: list[SubTask] = Field(
+        default_factory=list,
+        description=(
+            "New or modified subtasks. Reuse an existing id to replace that "
+            "subtask, use a new id such as T7 to add one, and omit every subtask "
+            "that does not change."
+        ),
+    )
+    remove_subtasks: list[str] = Field(
+        default_factory=list,
+        description=(
+            "IDs of subtasks that should no longer be part of the plan. "
+            "Dependents are re-pointed to the removed subtasks' dependencies."
+        ),
+    )
+    research_requests: list[str] = Field(
+        default_factory=list,
+        exclude=True,
+        description=(
+            "New focused web search queries, if any. Leave empty when the "
+            "existing research is sufficient. This is workflow control data and "
+            "is not written to the output artifact."
+        ),
+    )
+
+    def is_empty(self) -> bool:
+        """True when the patch would not change the plan at all."""
+        return (
+            self.summary is None
+            and self.assumptions is None
+            and self.definition_of_done is None
+            and self.open_questions is None
+            and not self.upsert_subtasks
+            and not self.remove_subtasks
+            and not self.research_requests
+        )
+
+
 class Critique(BaseModel):
     """Structured review of an implementation plan."""
 

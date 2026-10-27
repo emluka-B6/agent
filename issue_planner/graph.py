@@ -65,12 +65,21 @@ def build_graph(
 
     def planner(state: WorkflowState) -> dict[str, Any]:
         return planner_node(
-            state, model=model, provider=provider, max_retries=max_retries
+            state,
+            model=model,
+            provider=provider,
+            max_retries=max_retries,
+            max_research_calls=max_research_calls,
         )
 
     def critic(state: WorkflowState) -> dict[str, Any]:
         return critic_node(
-            state, model=model, provider=provider, max_retries=max_retries
+            state,
+            model=model,
+            provider=provider,
+            max_retries=max_retries,
+            max_iterations=max_iterations,
+            max_research_calls=max_research_calls,
         )
 
     def tracked(

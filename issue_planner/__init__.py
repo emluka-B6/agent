@@ -28,6 +28,7 @@ from issue_planner.llm import build_model
 from issue_planner.models import (
     Critique,
     ImplementationPlan,
+    PlanRevision,
     ResearchSummary,
     Source,
     SubTask,
@@ -50,6 +51,7 @@ __all__ = [
     "DOMAINS",
     "DomainProfile",
     "ImplementationPlan",
+    "PlanRevision",
     "ProgressReporter",
     "ResearchSummary",
     "Source",

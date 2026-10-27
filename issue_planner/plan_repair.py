@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import sys
 
+from issue_planner.config import (
+    DEFAULT_MAX_SUBTASKS,
+    OVERSIZED_IMPLEMENTATION_PROMPT_CHARS,
+    TARGET_IMPLEMENTATION_PROMPT_CHARS,
+)
 from issue_planner.models import ImplementationPlan, SubTask
 
 
@@ -97,14 +102,46 @@ def normalize_plan(plan: ImplementationPlan) -> ImplementationPlan:
     cleaned: list[SubTask] = []
     for task in normalized:
         dependencies: list[str] = []
+        dropped: list[str] = []
         for dependency in task.depends_on:
-            if (
-                dependency in valid_ids
-                and dependency != task.id
-                and dependency not in dependencies
-            ):
+            if (dependency in valid_ids and 
+                dependency != task.id and 
+                dependency not in dependencies):
                 dependencies.append(dependency)
+            elif dependency not in valid_ids or dependency == task.id:
+                dropped.append(dependency)
+        unknown = [item for item in dropped if item not in dependencies]
+        if unknown:
+            print(
+                f"warning: subtask '{task.id}' referenced unknown or self "
+                f"dependency {', '.join(sorted(set(unknown)))}; removed.",
+                file=sys.stderr,
+            )
         cleaned.append(task.model_copy(update={"depends_on": dependencies}))
 
     acyclic = break_dependency_cycles(cleaned)
     return plan.model_copy(update={"subtasks": topological_order(acyclic)})
+
+
+def plan_warnings(plan: ImplementationPlan) -> list[str]:
+    """Return size problems that make a valid plan hard to schedule.
+
+    These checks are deterministic echoes of the planner's size policy: they do
+    not change the plan, but they surface a plan that is too large or a subtask
+    prompt that is likely to blow the provider's output-token budget.
+    """
+    warnings: list[str] = []
+    if len(plan.subtasks) > DEFAULT_MAX_SUBTASKS:
+        warnings.append(
+            f"the plan has {len(plan.subtasks)} subtasks; the recommended maximum "
+            f"is {DEFAULT_MAX_SUBTASKS}."
+        )
+    for task in plan.subtasks:
+        length = len(task.implementation_prompt)
+        if length > OVERSIZED_IMPLEMENTATION_PROMPT_CHARS:
+            warnings.append(
+                f"subtask '{task.id}' has a {length}-character "
+                f"implementation_prompt; aim for about "
+                f"{TARGET_IMPLEMENTATION_PROMPT_CHARS}."
+            )
+    return warnings
