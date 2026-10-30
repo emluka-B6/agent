@@ -302,6 +302,16 @@ def critic_node(
     }
 
 
+def route_start(state: WorkflowState) -> str:
+    """Start at the planner when a plan was restored from an earlier run.
+
+    A resumed artifact already holds the plan, the review, and the research that
+    supported them, so re-running the initial research pass would only duplicate
+    work (and spend part of the new research budget).
+    """
+    return "planner" if state.get("plan") is not None else "research"
+
+
 def route_after_planner(
     state: WorkflowState,
     max_research_calls: int,

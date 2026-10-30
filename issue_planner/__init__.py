@@ -14,8 +14,11 @@ The package is split by responsibility so that the CLI entry point
 - :mod:`issue_planner.graph` - graph assembly and workflow runner
 - :mod:`issue_planner.progress` - console progress and partial artifacts
 - :mod:`issue_planner.output` - JSON/Markdown artifact rendering
+- :mod:`issue_planner.budget` - cumulative iteration/research budget
+- :mod:`issue_planner.resume` - continuing an unfinished run from an artifact
 """
 
+from issue_planner.budget import RunBudget
 from issue_planner.domains import (
     DEFAULT_DOMAIN,
     DOMAIN_KEYS,
@@ -43,6 +46,11 @@ from issue_planner.output import (
     write_output,
 )
 from issue_planner.progress import ProgressReporter
+from issue_planner.resume import (
+    ResumeState,
+    load_resume_state,
+    resolve_resume_path,
+)
 
 __all__ = [
     "Critique",
@@ -54,6 +62,8 @@ __all__ = [
     "PlanRevision",
     "ProgressReporter",
     "ResearchSummary",
+    "ResumeState",
+    "RunBudget",
     "Source",
     "SubTask",
     "WorkflowState",
@@ -63,7 +73,9 @@ __all__ = [
     "build_progress_document",
     "document_status",
     "get_domain",
+    "load_resume_state",
     "render_markdown",
+    "resolve_resume_path",
     "run_agent",
     "unique_output_path",
     "write_output",

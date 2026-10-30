@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TextIO
 
+from issue_planner.budget import RunBudget
 from issue_planner.config import (
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_MAX_RESEARCH_CALLS,
@@ -100,6 +101,10 @@ class ProgressReporter:
     ``output_path`` is optional. When it is set, the reporter writes a partial
     artifact after every workflow step. ``stream`` defaults to ``sys.stderr``
     and is resolved at call time so test capture works as expected.
+
+    ``budget`` carries the cumulative iteration/research budget. When it is
+    given it supersedes ``max_iterations`` and ``max_research_calls``, which
+    keeps the console and the artifacts consistent for a resumed run.
     """
 
     output_path: Path | str | None = None
@@ -112,6 +117,7 @@ class ProgressReporter:
     stream: TextIO | None = None
     max_research_calls: int = DEFAULT_MAX_RESEARCH_CALLS
     research_available: bool = True
+    budget: RunBudget | None = None
 
     _started_at: float = field(
         default_factory=time.monotonic, init=False, repr=False
@@ -123,6 +129,18 @@ class ProgressReporter:
     )
     _partial_announced: bool = field(default=False, init=False, repr=False)
     _partial_written: bool = field(default=False, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.budget is not None:
+            self.max_iterations = self.budget.max_iterations
+            self.max_research_calls = self.budget.max_research_calls
+
+    @property
+    def run_budget(self) -> RunBudget:
+        """The cumulative budget, defaulting to a single-run budget."""
+        return self.budget or RunBudget.fresh(
+            self.max_iterations, self.max_research_calls
+        )
 
     @property
     def partial_written(self) -> bool:
@@ -148,6 +166,7 @@ class ProgressReporter:
             running_stage=self._running_stage,
             generated_at=self.generated_at,
             max_research_calls=self.max_research_calls,
+            budget=self.run_budget,
         )
         try:
             write_output(document, output_path, self.output_format)
@@ -172,14 +191,29 @@ class ProgressReporter:
         self.generated_at = self.generated_at or datetime.now(
             timezone.utc
         ).isoformat()
+        budget = self.run_budget
         workflow = " -> ".join(_label(node) for node in NODE_STEPS)
+        run_suffix = f" | run {budget.runs}" if budget.continued_run else ""
         self._emit(
             f"[agent] planning started | domain={self.domain} | "
             f"workflow={workflow} | max iterations={self.max_iterations} | "
-            f"max research calls={self.max_research_calls}"
+            f"max research calls={self.max_research_calls}{run_suffix}"
         )
+        if budget.continued_run:
+            self._emit(
+                f"[agent] continuing {budget.resumed_from} "
+                f"(previous status={budget.previous_status}) | "
+                f"already used: iterations={budget.iterations_before}, "
+                f"research calls={budget.research_calls_before} | "
+                f"this run may add {budget.iterations_available} iteration(s) "
+                f"and {budget.research_calls_available} research call(s)"
+            )
         self._emit(f"[agent] issue: {_one_line(issue)}")
         initial_state: WorkflowState = {"issue": issue, "domain": self.domain}
+        if budget.continued_run:
+            # Keep the partial artifact honest about what earlier runs spent.
+            initial_state["evaluations"] = budget.iterations_before
+            initial_state["research_calls"] = budget.research_calls_before
         self._save_partial(initial_state, "starting")
 
     def node_started(self, node: str, state: WorkflowState) -> None:
@@ -235,7 +269,12 @@ class ProgressReporter:
         self._save_partial(state, f"{node}_failed")
 
     def workflow_finished(self, state: WorkflowState) -> None:
-        """Print the final one-line summary for a completed workflow."""
+        """Print the final one-line summary for a completed workflow.
+
+        The line reports the cumulative counters, so a user who chained several
+        runs sees what the whole analysis cost before deciding on a new
+        ``--max-iterations`` value for the next continuation.
+        """
         elapsed = time.monotonic() - self._started_at
         tasks = _subtasks(state)
         status = document_status(state, self.max_iterations)
@@ -243,7 +282,11 @@ class ProgressReporter:
             f"[agent] planning finished in {_duration(elapsed)} | "
             f"status={status} | "
             f"approved={'yes' if state.get('approved') else 'no'} | "
-            f"subtasks={len(tasks)}"
+            f"subtasks={len(tasks)} | "
+            f"iterations={state.get('evaluations', 0)}/{self.max_iterations} | "
+            f"research calls={state.get('research_calls', 0)}/"
+            f"{self.max_research_calls} | "
+            f"runs={self.run_budget.runs}"
         )
 
     def workflow_failed(self, error: BaseException) -> None:

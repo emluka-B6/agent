@@ -22,8 +22,10 @@ issue_planner/
   plan_editor.py          Subtask insert/split/merge/remove and plan revisions
   nodes.py                research / planner / critic LangGraph nodes
   graph.py                Graph assembly and run_agent()
+  budget.py               Cumulative iteration/research budget across runs
   progress.py             Console progress and partial-artifact persistence
   output.py               JSON and Markdown artifact rendering
+  resume.py               Loading a previous artifact to continue a run
   web/
     server.py             FastAPI app (list/load/remove/save/export)
     dist/                 Built React assets (generated, gitignored)
@@ -33,6 +35,7 @@ tests/
   test_plan_repair.py     Dependency repair and plan size warnings
   test_prompts.py         Domain profiles and shared prompt templates
   test_progress.py        Console progress and partial artifacts
+  test_resume.py          Continuing an unfinished run from its artifact
   test_web.py             API tests for the viewer
   test_workflow.py        Follow-up research routing, budgets, and revisions
 ```
@@ -94,6 +97,10 @@ research -> planner -> critic
    If it finds blocking issues, the planner revises the plan with a patch. The
    loop is bounded by `--max-iterations`.
 
+A run that ends with `status=max_iterations_reached` is not lost: `--resume`
+loads the artifact and continues the loop from the planner (see
+[Continue an unfinished run](#continue-an-unfinished-run)).
+
 The final plan is written atomically to a uniquely named output file in
 `outputs/` as JSON by default. The name is derived from a hash (for example
 `output-4f1c9a7d2b3e.json`), so running the agent again never overwrites an
@@ -127,8 +134,12 @@ for the final path):
 [2/3] planner sub-agent: done in 19.8s | subtasks=6
 [3/3] critic sub-agent: running... | reviewing 6 subtasks
 [3/3] critic sub-agent: done in 5.4s | approved=yes | blocking issues=0
-[agent] planning finished in 58.7s | status=approved | approved=yes | subtasks=6
+[agent] planning finished in 58.7s | status=approved | approved=yes | subtasks=6 | iterations=2/2 | research calls=2/2 | runs=1
 ```
+
+The final line reports the cumulative `iterations` and `research calls` next to
+their caps, plus how many chained runs produced the artifact (`runs`), so a
+continuation starts from a known number instead of guessing.
 
 The output file is also updated after every step as a partial artifact, so a
 long run never leaves you without a result. Partial artifacts have
@@ -136,6 +147,57 @@ long run never leaves you without a result. Partial artifacts have
 stage, completed stages, subtask count, and subtask titles). When the workflow
 finishes, the same path is atomically rewritten with the final plan and status.
 If the run fails, the partial artifact is kept and its path is printed.
+
+## Continue an unfinished run
+
+A run can stop without an approval because its revision budget ran out:
+
+```text
+[agent] planning finished in 2m 12s | status=max_iterations_reached | approved=no | subtasks=10 | iterations=2/2 | research calls=1/2 | runs=1
+```
+
+The plan is complete enough to keep working on, so `--resume` continues from it
+instead of regenerating everything:
+
+```bash
+# Continue the newest artifact in outputs/ with a fresh budget
+python agent.py --resume latest --max-iterations 2
+
+# Continue a specific artifact (or a directory: its newest artifact is used)
+python agent.py --resume outputs/output-90a34bf68ba1.json --max-iterations 2
+python agent.py --resume outputs --max-iterations 2
+```
+
+What a resumed run keeps and what it adds:
+
+- **Kept from the artifact:** the issue, the domain, the plan (same subtask ids),
+  the research summary and sources, and the last review. The planner receives
+  that review, so the revision targets the blocking issues of the previous run.
+- **Skipped:** the initial research pass. The workflow starts at the planner, and
+  follow-up research only runs when the planner asks for it and budget remains.
+- **Added:** `--max-iterations` and `--max-research-calls` are *extra* budget on
+  top of what the artifact already spent. Resuming an artifact that used two
+  reviews with `--max-iterations 2` therefore allows two more reviews (a total of
+  four), instead of ending immediately. The effective cumulative budget is
+  printed before the run starts:
+
+  ```text
+  info: continuing output-90a34bf68ba1.json (status=max_iterations_reached, runs=1, iterations=2/2, research calls=1/2); this run adds 2 iteration(s) and 2 research call(s), for a total budget of 4 iteration(s) and 3 research call(s).
+  [agent] planning started | domain=software | workflow=research sub-agent -> planner sub-agent -> critic sub-agent | max iterations=4 | max research calls=3 | run 2
+  [agent] continuing outputs/output-90a34bf68ba1.json (previous status=max_iterations_reached) | already used: iterations=2, research calls=1 | this run may add 2 iteration(s) and 2 research call(s)
+  [2/3] planner sub-agent: running... | review 3/4 | revising 10 subtasks
+  ```
+
+- **Recorded in the new artifact:** the cumulative counters
+  (`metadata.evaluations`, `metadata.research_calls`), their cumulative caps, the
+  per-run values (`metadata.iterations_this_run`, ...), the run count
+  (`metadata.runs`), and the artifact it continues (`metadata.resumed_from`,
+  `metadata.previous_status`). The new run writes its own file, so the history of
+  a long analysis is preserved and every artifact can be resumed again.
+
+Only JSON artifacts can be resumed; a Markdown report is not machine-readable.
+An artifact that is still marked `"status": "running"` is rejected, because the
+interrupted run may not have written a consistent state.
 
 ## Domains
 
@@ -222,6 +284,11 @@ python agent.py "Harden the public API against the OWASP API Top 10" --domain cy
 # Control planner-triggered follow-up research (2 = initial pass + one follow-up)
 python agent.py "Add rate limiting" --max-research-calls 2
 python agent.py "Add rate limiting" --max-research-calls 1
+
+# Continue an unfinished run (max_iterations_reached) instead of starting over;
+# the budgets are added to what the artifact already spent
+python agent.py --resume latest --max-iterations 2
+python agent.py --resume outputs/output-4f1c9a7d2b3e.json --max-iterations 3
 
 # Skip web research
 python agent.py "Add structured logging" --skip-research
@@ -411,15 +478,26 @@ The default JSON artifact contains:
     "model": "gpt-5-mini",
     "evaluations": 1,
     "max_iterations": 2,
+    "iterations_this_run": 1,
+    "max_iterations_this_run": 2,
     "research_calls": 2,
-    "max_research_calls": 2
+    "max_research_calls": 2,
+    "research_calls_this_run": 2,
+    "max_research_calls_this_run": 2,
+    "runs": 1,
+    "resumed_from": null,
+    "previous_status": null
   }
 }
 ```
 
-`metadata.research_calls` records how many research sub-agent calls ran, and
-`metadata.max_research_calls` records the configured bound. Planner
-`research_requests` are workflow control data and never appear in the artifact.
+`metadata.evaluations` records how many critic reviews the whole analysis spent,
+and `metadata.max_iterations` the cumulative bound. The same applies to
+`metadata.research_calls`/`metadata.max_research_calls`. The `*_this_run` values
+describe the current invocation, `metadata.runs` counts how many chained runs
+produced the artifact, and `metadata.resumed_from`/`metadata.previous_status`
+point at the artifact a continued run picked up. Planner `research_requests` are
+workflow control data and never appear in the artifact.
 
 `status` is one of `approved`, `needs_improvement`, or
 `max_iterations_reached`. While a run is still in progress the same file

@@ -12,6 +12,11 @@ earlier plan.
 This module keeps the command-line interface. The implementation lives in the
 ``issue_planner`` package; the public names are re-exported here so existing
 ``import agent`` code keeps working.
+
+An unfinished run (for example ``status=max_iterations_reached``) can be
+continued with ``--resume``: the previous artifact supplies the issue, domain,
+plan, review, and research, and the iteration/research budgets are extended
+instead of being reset.
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ from pathlib import Path
 
 from langchain_tavily import TavilySearch
 
+from issue_planner.budget import RunBudget
 from issue_planner.config import (
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_MAX_RESEARCH_CALLS,
@@ -57,6 +63,7 @@ from issue_planner.output import (
     write_output,
 )
 from issue_planner.progress import ProgressReporter
+from issue_planner.resume import ResumeState, load_resume_state, resolve_resume_path
 
 __all__ = [
     "Critique",
@@ -65,6 +72,8 @@ __all__ = [
     "ImplementationPlan",
     "ProgressReporter",
     "ResearchSummary",
+    "ResumeState",
+    "RunBudget",
     "Source",
     "SubTask",
     "WorkflowState",
@@ -75,8 +84,10 @@ __all__ = [
     "build_progress_document",
     "document_status",
     "get_domain",
+    "load_resume_state",
     "main",
     "render_markdown",
+    "resolve_resume_path",
     "run_agent",
     "unique_output_path",
     "write_output",
@@ -127,6 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  python agent.py \"Harden the public API against the OWASP API Top 10\" --domain cybersecurity\n"
             "  python agent.py --issue-file issue.md --format markdown --skip-research\n"
             "  python agent.py \"Add structured logging\" --output-dir plans\n"
+            "  python agent.py --resume latest --max-iterations 2\n"
             "  python agent.py --list-models\n"
         ),
     )
@@ -155,6 +167,18 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("json", "markdown"),
         default="json",
         help="Output format (default: json).",
+    )
+    parser.add_argument(
+        "--resume",
+        metavar="ARTIFACT",
+        help=(
+            "Continue an earlier run from its JSON artifact instead of starting "
+            "over. Pass a file, a directory (its newest artifact is used), or "
+            "'latest' (the newest artifact in --output-dir). The issue, domain, "
+            "plan, review, and research come from the artifact, and "
+            "--max-iterations/--max-research-calls are added to the budget that "
+            "artifact already spent."
+        ),
     )
     parser.add_argument(
         "--provider",
@@ -188,7 +212,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-iterations",
         type=int,
         default=DEFAULT_MAX_ITERATIONS,
-        help=f"Maximum number of critic reviews (default: {DEFAULT_MAX_ITERATIONS}).",
+        help=(
+            "Maximum number of critic reviews in one run "
+            f"(default: {DEFAULT_MAX_ITERATIONS}). With --resume this many "
+            "reviews are added on top of the ones the artifact already spent."
+        ),
     )
     parser.add_argument(
         "--max-research-calls",
@@ -196,7 +224,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_MAX_RESEARCH_CALLS,
         help=(
             "Maximum number of research sub-agent calls, including the initial "
-            f"pass (default: {DEFAULT_MAX_RESEARCH_CALLS})."
+            f"pass (default: {DEFAULT_MAX_RESEARCH_CALLS}). With --resume these "
+            "are added on top of the calls the artifact already spent."
         ),
     )
     parser.add_argument(
@@ -231,17 +260,37 @@ def main(argv: list[str] | None = None) -> int:
         print(format_model_catalog())
         return 0
 
-    try:
-        issue = _resolve_issue(args)
-    except (OSError, ValueError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
+    resume: ResumeState | None = None
+    if args.resume is not None:
+        try:
+            resume = load_resume_state(
+                resolve_resume_path(args.resume, args.output_dir)
+            )
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
 
-    try:
-        domain = get_domain(args.domain).key
-    except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
+    if resume is not None:
+        if args.issue or args.issue_file:
+            print(
+                "info: --resume ignores the issue argument; the issue and the "
+                "domain are read from the artifact.",
+                file=sys.stderr,
+            )
+        issue = resume.issue
+        domain = resume.domain
+    else:
+        try:
+            issue = _resolve_issue(args)
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
+        try:
+            domain = get_domain(args.domain).key
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
 
     if args.max_iterations < 1:
         print("error: --max-iterations must be at least 1.", file=sys.stderr)
@@ -255,6 +304,30 @@ def main(argv: list[str] | None = None) -> int:
     if args.max_retries < 1:
         print("error: --max-retries must be at least 1.", file=sys.stderr)
         return 2
+
+    budget = (
+        RunBudget.continued(resume, args.max_iterations, args.max_research_calls)
+        if resume is not None
+        else RunBudget.fresh(args.max_iterations, args.max_research_calls)
+    )
+    if resume is not None:
+        print(
+            f"info: continuing {resume.name} (status={resume.status}, "
+            f"runs={resume.runs}, iterations={resume.evaluations}/"
+            f"{resume.max_iterations}, research calls={resume.research_calls}/"
+            f"{resume.max_research_calls}); this run adds "
+            f"{budget.iterations_available} iteration(s) and "
+            f"{budget.research_calls_available} research call(s), for a total "
+            f"budget of {budget.max_iterations} iteration(s) and "
+            f"{budget.max_research_calls} research call(s).",
+            file=sys.stderr,
+        )
+        if resume.status == "approved":
+            print(
+                "note: the resumed artifact was already approved; this run will "
+                "revise and review the plan again.",
+                file=sys.stderr,
+            )
 
     provider = args.provider
     try:
@@ -315,11 +388,12 @@ def main(argv: list[str] | None = None) -> int:
         output_format=output_format,
         provider=provider,
         model_name=model_name,
-        max_iterations=args.max_iterations,
-        max_research_calls=args.max_research_calls,
+        max_iterations=budget.max_iterations,
+        max_research_calls=budget.max_research_calls,
         research_available=search_client is not None and not args.skip_research,
         domain=domain,
         generated_at=generated_at,
+        budget=budget,
     )
 
     try:
@@ -328,13 +402,14 @@ def main(argv: list[str] | None = None) -> int:
             model=model,
             provider=provider,
             search_client=search_client,
-            max_iterations=args.max_iterations,
-            max_research_calls=args.max_research_calls,
+            max_iterations=budget.max_iterations,
+            max_research_calls=budget.max_research_calls,
             max_search_results=args.max_search_results,
             skip_research=args.skip_research,
             max_retries=args.max_retries,
             domain=domain,
             reporter=reporter,
+            initial_state=resume.as_initial_state() if resume is not None else None,
         )
     except Exception as exc:  # noqa: BLE001 - report agent failures cleanly
         print(f"error: agent failed: {exc}", file=sys.stderr)
@@ -345,9 +420,10 @@ def main(argv: list[str] | None = None) -> int:
             state,
             provider=provider,
             model_name=model_name,
-            max_iterations=args.max_iterations,
+            max_iterations=budget.max_iterations,
             generated_at=generated_at,
-            max_research_calls=args.max_research_calls,
+            max_research_calls=budget.max_research_calls,
+            budget=budget,
         )
         output_path, output_format = write_output(
             document, output_path, output_format
@@ -361,10 +437,15 @@ def main(argv: list[str] | None = None) -> int:
             )
         return 1
 
+    metadata = document["metadata"]
     print(
         f"Plan written to {output_path} ({output_format}, "
         f"status={document['status']}, "
-        f"subtasks={len(document['subtasks'])}).",
+        f"subtasks={len(document['subtasks'])}, "
+        f"iterations={metadata['evaluations']}/{metadata['max_iterations']}, "
+        f"research calls={metadata['research_calls']}/"
+        f"{metadata['max_research_calls']}, "
+        f"runs={metadata['runs']}).",
         file=sys.stderr,
     )
     # Keep the final stdout line machine-readable: the generated file path.

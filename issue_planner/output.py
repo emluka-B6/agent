@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from issue_planner.budget import RunBudget
 from issue_planner.config import DEFAULT_MAX_RESEARCH_CALLS, DEFAULT_OUTPUT_DIR
 from issue_planner.domains import DEFAULT_DOMAIN
 from issue_planner.models import WorkflowState
@@ -61,12 +62,20 @@ def build_document(
     *,
     generated_at: str | None = None,
     max_research_calls: int = DEFAULT_MAX_RESEARCH_CALLS,
+    budget: RunBudget | None = None,
 ) -> dict[str, Any]:
-    """Build the serializable artifact written to the output file."""
+    """Build the serializable artifact written to the output file.
+
+    ``budget`` describes the cumulative iteration/research budget of a run that
+    may continue an earlier artifact. When it is given it supersedes
+    ``max_iterations`` and ``max_research_calls`` and adds the totals a chained
+    run needs (``runs``, ``resumed_from``, and the per-run counters).
+    """
     plan = state.get("plan")
     if plan is None:
         raise RuntimeError("The workflow finished without producing a plan.")
 
+    run_budget = budget or RunBudget.fresh(max_iterations, max_research_calls)
     plan_data = plan.model_dump()
     critique = state.get("critique")
     research = state.get("research")
@@ -75,7 +84,7 @@ def build_document(
         "issue": state.get("issue", ""),
         "domain": state.get("domain", DEFAULT_DOMAIN),
         "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
-        "status": document_status(state, max_iterations),
+        "status": document_status(state, run_budget.max_iterations),
         "approved": bool(state.get("approved")),
         "summary": plan_data["summary"],
         "subtasks": plan_data["subtasks"],
@@ -91,10 +100,9 @@ def build_document(
         "metadata": {
             "provider": provider,
             "model": model_name,
-            "evaluations": state.get("evaluations", 0),
-            "max_iterations": max_iterations,
-            "research_calls": state.get("research_calls", 0),
-            "max_research_calls": max_research_calls,
+            **run_budget.to_metadata(
+                state.get("evaluations", 0), state.get("research_calls", 0)
+            ),
         },
     }
 
@@ -110,6 +118,7 @@ def build_progress_document(
     running_stage: str | None = None,
     generated_at: str | None = None,
     max_research_calls: int = DEFAULT_MAX_RESEARCH_CALLS,
+    budget: RunBudget | None = None,
 ) -> dict[str, Any]:
     """Build a partial artifact for an in-progress workflow.
 
@@ -118,6 +127,7 @@ def build_progress_document(
     replaced with empty values and ``metadata.progress`` records which stage is
     running, which stages finished, and how many subtasks exist so far.
     """
+    run_budget = budget or RunBudget.fresh(max_iterations, max_research_calls)
     plan_data = _dump_model(state.get("plan")) or {}
     critique = _dump_model(state.get("critique"))
     research = _dump_model(state.get("research"))
@@ -146,10 +156,9 @@ def build_progress_document(
         "metadata": {
             "provider": provider,
             "model": model_name,
-            "evaluations": state.get("evaluations", 0),
-            "max_iterations": max_iterations,
-            "research_calls": state.get("research_calls", 0),
-            "max_research_calls": max_research_calls,
+            **run_budget.to_metadata(
+                state.get("evaluations", 0), state.get("research_calls", 0)
+            ),
             "progress": {
                 "partial": True,
                 "stage": stage,
@@ -313,8 +322,13 @@ def render_markdown(document: dict[str, Any]) -> str:
             f"- Model: {metadata.get('model', 'unknown')}",
             f"- Evaluations: {metadata.get('evaluations', 0)}",
             f"- Max iterations: {metadata.get('max_iterations', 0)}",
+            f"- Research calls: {metadata.get('research_calls', 0)}",
+            f"- Max research calls: {metadata.get('max_research_calls', 0)}",
+            f"- Runs: {metadata.get('runs', 1)}",
         ]
     )
+    if metadata.get("resumed_from"):
+        lines.append(f"- Resumed from: {metadata['resumed_from']}")
     progress = metadata.get("progress")
     if progress:
         completed = ", ".join(progress.get("completed_stages") or []) or "none"

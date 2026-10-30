@@ -22,6 +22,7 @@ from issue_planner.nodes import (
     research_node,
     route_after_critic,
     route_after_planner,
+    route_start,
 )
 from issue_planner.progress import ProgressReporter
 
@@ -41,7 +42,9 @@ def build_graph(
 
     The planner may route back to research when it asks for targeted follow-up
     information while revising the plan. At most ``max_research_calls`` research
-    invocations (including the initial one) are allowed per run.
+    invocations (including the initial one) are allowed per run. A state that
+    already carries a plan (a resumed run) starts at the planner and skips the
+    initial research pass.
     """
     if max_iterations < 1:
         raise ValueError("max_iterations must be at least 1.")
@@ -108,7 +111,11 @@ def build_graph(
     graph.add_node("planner", tracked("planner", planner))
     graph.add_node("critic", tracked("critic", critic))
     research_available = search_client is not None and not skip_research
-    graph.add_edge(START, "research")
+    graph.add_conditional_edges(
+        START,
+        route_start,
+        {"research": "research", "planner": "planner"},
+    )
     graph.add_edge("research", "planner")
     graph.add_conditional_edges(
         "planner",
@@ -137,12 +144,18 @@ def run_agent(
     domain: str = DEFAULT_DOMAIN,
     reporter: ProgressReporter | None = None,
     max_research_calls: int = DEFAULT_MAX_RESEARCH_CALLS,
+    initial_state: WorkflowState | None = None,
 ) -> WorkflowState:
     """Run the workflow and return its final state.
 
     ``reporter`` is optional. When supplied, it receives a callback for every
     workflow node and can persist partial artifacts while the run is in
     progress.
+
+    ``initial_state`` pre-fills the workflow state. ``agent.py`` uses it to
+    continue a previous artifact: the restored plan makes the graph start at the
+    planner, and the restored counters make ``max_iterations`` and
+    ``max_research_calls`` cumulative across chained runs.
     """
     profile = get_domain(domain)
     issue = issue.strip()
@@ -160,7 +173,7 @@ def run_agent(
         max_retries=max_retries,
         reporter=reporter,
     )
-    initial_state: WorkflowState = {
+    state: WorkflowState = {
         "issue": issue,
         "domain": profile.key,
         "research": None,
@@ -173,10 +186,14 @@ def run_agent(
         "evaluations": 0,
         "approved": False,
     }
+    if initial_state:
+        state.update(initial_state)
+        state["issue"] = issue
+        state["domain"] = profile.key
     if reporter is not None:
         reporter.workflow_started(issue)
     try:
-        final_state = graph.invoke(initial_state)
+        final_state = graph.invoke(state)
     except Exception as exc:
         if reporter is not None:
             reporter.workflow_failed(exc)
