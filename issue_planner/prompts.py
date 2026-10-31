@@ -55,6 +55,12 @@ Size policy:
 Split every subtask you would label large. A plan has at most $max_subtasks subtasks.
 Keep each implementation_prompt under about $implementation_prompt_budget characters: state the goal, the interfaces to use, the constraints, the expected $artifact_noun, and the acceptance criteria. Do not paste whole files.
 
+Top-level fields (keep them distinct and never restate one in another):
+- summary: two to four sentences about the strategy and why it fits the issue; no subtask-by-subtask recap and no completion checklist.
+- assumptions: unverified premises the plan depends on, one per item and stated as a premise; no tasks, checks, or questions.
+- open_questions: decisions that only a human can make; none of them may block execution.
+- definition_of_done: a bullet list of observable, testable end-state conditions that prove the whole issue is solved, one condition per item; no assumptions, no questions, and no per-subtask acceptance criteria.
+
 Rules:
 - Use stable IDs such as T1, T2, T3.
 - Every subtask must have a self-contained implementation_prompt with the goal, context, constraints, expected $artifact_noun, and acceptance criteria.
@@ -93,6 +99,7 @@ Check:
 - sizing: every subtask is small or medium, its complexity matches the described scope, and the plan has at most $max_subtasks subtasks;
 - correct dependencies and execution order;
 - observable acceptance criteria and concrete verification;
+- no repeated content between summary, assumptions, open_questions, and definition_of_done, and a definition_of_done written as one observable condition per bullet;
 - realistic $artifact_noun and scope;
 - self-contained implementation prompts that respect the size policy;
 - open_questions contains only decisions that never block execution.$critic_checks

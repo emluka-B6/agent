@@ -54,6 +54,57 @@ def _one_line(text: str, limit: int = 300) -> str:
     return compact[: limit - 3].rstrip() + "..."
 
 
+#: Plan-level bullet sections, in the order that decides which section keeps a
+#: repeated item. The definition of done wins because it is the completion
+#: checklist the reader relies on; after it a premise stays an assumption and a
+#: decision stays an open question. ``summary`` is prose, so it is not part of
+#: this cleanup.
+_BULLET_SECTIONS: tuple[str, ...] = (
+    "definition_of_done",
+    "assumptions",
+    "open_questions",
+)
+
+
+def _item_key(item: str) -> str:
+    """Return a comparison key for a bullet (case, spacing, punctuation free)."""
+    return re.sub(r"[\W_]+", " ", str(item).casefold()).strip()
+
+
+def _unique_items(items: Iterable[str], seen: set[str]) -> list[str]:
+    """Strip items and drop empty or already ``seen`` ones, updating ``seen``."""
+    unique: list[str] = []
+    for item in items:
+        text = str(item).strip()
+        key = _item_key(text)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(text)
+    return unique
+
+
+def dedupe_sections(document: dict[str, Any]) -> dict[str, Any]:
+    """Remove repeated bullets from the plan-level sections, in place.
+
+    The planner is instructed to keep the definition of done, the assumptions,
+    and the open questions distinct, but structured output can still restate the
+    same item in two places. Exact repeats (ignoring case, punctuation, and
+    spacing) are dropped here so that every item appears in exactly one section.
+    The definition of done wins, then assumptions, then open questions.
+    """
+    seen: set[str] = set()
+    for key in _BULLET_SECTIONS:
+        if key not in document:
+            continue
+        original = [str(item).strip() for item in (document.get(key) or [])]
+        unique = _unique_items(original, seen)
+        # The plan schema requires at least one definition-of-done entry, so an
+        # all-blank list is left as it is instead of becoming empty.
+        document[key] = unique or (original if key == "definition_of_done" else [])
+    return document
+
+
 def build_document(
     state: WorkflowState,
     provider: str,
@@ -80,7 +131,7 @@ def build_document(
     critique = state.get("critique")
     research = state.get("research")
 
-    return {
+    document = {
         "issue": state.get("issue", ""),
         "domain": state.get("domain", DEFAULT_DOMAIN),
         "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
@@ -105,6 +156,7 @@ def build_document(
             ),
         },
     }
+    return dedupe_sections(document)
 
 
 def build_progress_document(
@@ -134,7 +186,7 @@ def build_progress_document(
     subtasks = list(plan_data.get("subtasks") or [])
     completed = list(completed_stages)
 
-    return {
+    document = {
         "issue": state.get("issue", ""),
         "domain": state.get("domain", DEFAULT_DOMAIN),
         "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
@@ -171,6 +223,7 @@ def build_progress_document(
             },
         },
     }
+    return dedupe_sections(document)
 
 
 def render_markdown(document: dict[str, Any]) -> str:
@@ -248,7 +301,10 @@ def render_markdown(document: dict[str, Any]) -> str:
     lines.append("")
 
     lines.extend(["## Definition of done", ""])
-    lines.extend(f"- {item}" for item in document["definition_of_done"])
+    if document["definition_of_done"]:
+        lines.extend(f"- {item}" for item in document["definition_of_done"])
+    else:
+        lines.append("- none")
     lines.append("")
 
     review = document.get("review")

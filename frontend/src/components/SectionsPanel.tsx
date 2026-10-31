@@ -65,7 +65,7 @@ export default function SectionsPanel({
         <Bullets items={document.open_questions} />
       </Section>
 
-      <Section title="Definition of done">
+      <Section title={`Definition of done (${document.definition_of_done.length})`}>
         <Bullets items={document.definition_of_done} />
       </Section>
 

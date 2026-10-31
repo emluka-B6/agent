@@ -84,9 +84,20 @@ class SubTask(BaseModel):
 class ImplementationPlan(BaseModel):
     """The complete plan produced by the planner and reviewed by the critic."""
 
-    summary: str = Field(description="Short summary of the proposed strategy.")
+    summary: str = Field(
+        description=(
+            "Two to four sentences describing the strategy and why it fits the "
+            "issue. Do not walk through the subtasks and do not restate the "
+            "definition of done."
+        )
+    )
     assumptions: list[str] = Field(
-        default_factory=list, description="Assumptions made while preparing the plan."
+        default_factory=list,
+        description=(
+            "Unverified premises that the plan depends on, one per bullet. "
+            "State them as premises; do not restate definition-of-done checks "
+            "or open questions."
+        ),
     )
     subtasks: list[SubTask] = Field(
         min_length=1, description="Ordered list of schedulable implementation subtasks."
@@ -97,7 +108,12 @@ class ImplementationPlan(BaseModel):
     )
     definition_of_done: list[str] = Field(
         min_length=1,
-        description="High-level conditions that define a complete solution.",
+        description=(
+            "Bullet list of observable, testable end-state conditions that "
+            "prove the whole issue is solved, one condition per item. Do not "
+            "repeat assumptions, open questions, or per-subtask acceptance "
+            "criteria."
+        ),
     )
     research_requests: list[str] = Field(
         default_factory=list,
@@ -122,15 +138,26 @@ class PlanRevision(BaseModel):
     """
 
     summary: str | None = Field(
-        default=None, description="Replacement summary, only when it changed."
+        default=None,
+        description=(
+            "Replacement summary, only when it changed; keep it to two to four "
+            "sentences without a subtask recap."
+        ),
     )
     assumptions: list[str] | None = Field(
-        default=None, description="Replacement assumptions, only when they changed."
+        default=None,
+        description=(
+            "Replacement assumptions, only when they changed; remove any item "
+            "that is really a definition-of-done check or an open question."
+        ),
     )
     definition_of_done: list[str] | None = Field(
         default=None,
         min_length=1,
-        description="Replacement definition of done, only when it changed.",
+        description=(
+            "Replacement definition of done (bulleted, one observable end-state "
+            "condition per item), only when it changed."
+        ),
     )
     open_questions: list[str] | None = Field(
         default=None, description="Replacement open questions, only when they changed."

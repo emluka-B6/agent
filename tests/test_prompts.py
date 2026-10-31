@@ -156,6 +156,22 @@ def test_critic_prompt_checks_sizing_and_previous_reviews() -> None:
     assert "stylistic preferences" in critic_prompt
 
 
+def test_planner_prompt_separates_the_plan_level_sections() -> None:
+    planner_prompt = prompts_for(DEFAULT_DOMAIN).planner_system_prompt
+
+    assert "Top-level fields" in planner_prompt
+    assert "no subtask-by-subtask recap" in planner_prompt
+    assert "definition_of_done: a bullet list" in planner_prompt
+    assert "no per-subtask acceptance criteria" in planner_prompt
+
+
+def test_critic_prompt_rejects_repeated_sections() -> None:
+    critic_prompt = prompts_for(DEFAULT_DOMAIN).critic_system_prompt
+
+    assert "no repeated content between summary" in critic_prompt
+    assert "one observable condition per bullet" in critic_prompt
+
+
 def test_source_list_is_numbered_and_bounded() -> None:
     sources = [
         Source(title="Alpha", url="https://example.com/a", snippet="A" * 100),

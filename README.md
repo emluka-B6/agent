@@ -491,6 +491,22 @@ The default JSON artifact contains:
 }
 ```
 
+The plan-level sections have separate jobs, so an item should appear in exactly
+one of them:
+
+- `summary` — two to four sentences of strategy; no subtask-by-subtask recap.
+- `assumptions` — unverified premises the plan relies on, one bullet each.
+- `open_questions` — decisions only a human can make; they never block execution.
+- `definition_of_done` — a bullet list of observable, testable end-state
+  conditions that prove the whole issue is solved, one condition per item.
+
+`definition_of_done` is the only completion checklist. It does not repeat
+assumptions, open questions, or the per-subtask `acceptance_criteria`. If the
+planner still emits the same item twice, the artifact builder drops the later
+duplicate (ignoring case, punctuation, and spacing) and keeps it in the first
+section it belongs to: the definition of done wins over assumptions, and
+assumptions win over open questions.
+
 `metadata.evaluations` records how many critic reviews the whole analysis spent,
 and `metadata.max_iterations` the cumulative bound. The same applies to
 `metadata.research_calls`/`metadata.max_research_calls`. The `*_this_run` values
