@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import type { PlanDocument } from "../api/types";
+import type { OpenQuestion, PlanDocument } from "../api/types";
 
 function Bullets({
   items,
@@ -18,6 +18,36 @@ function Bullets({
         <li key={`${index}-${item}`}>{item}</li>
       ))}
     </ul>
+  );
+}
+
+function OpenQuestions({ items }: { items: OpenQuestion[] }) {
+  if (items.length === 0) {
+    return <p className="muted">none</p>;
+  }
+  return (
+    <ol className="bullets">
+      {items.map((question, index) => (
+        <li key={`${index}-${question.question}`}>
+          {question.question}
+          {question.options.length > 0 && (
+            <ol>
+              {question.options.map((option, optionIndex) => (
+                <li key={`${optionIndex}-${option}`}>
+                  {option}
+                  {option === question.recommended && (
+                    <span className="muted"> (recommended)</span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+          {question.answer && (
+            <p className="muted">Answer: {question.answer}</p>
+          )}
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -62,7 +92,7 @@ export default function SectionsPanel({
       </Section>
 
       <Section title={`Open questions (${document.open_questions.length})`}>
-        <Bullets items={document.open_questions} />
+        <OpenQuestions items={document.open_questions} />
       </Section>
 
       <Section title={`Definition of done (${document.definition_of_done.length})`}>

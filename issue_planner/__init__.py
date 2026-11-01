@@ -10,6 +10,7 @@ The package is split by responsibility so that the CLI entry point
 - :mod:`issue_planner.llm` - chat-model factory and structured-output helpers
 - :mod:`issue_planner.research` - web-source extraction and prompt formatting
 - :mod:`issue_planner.plan_repair` - subtask ID and dependency normalisation
+- :mod:`issue_planner.questions` - answering a plan's open questions on resume
 - :mod:`issue_planner.nodes` - LangGraph node implementations
 - :mod:`issue_planner.graph` - graph assembly and workflow runner
 - :mod:`issue_planner.progress` - console progress and partial artifacts
@@ -31,6 +32,7 @@ from issue_planner.llm import build_model
 from issue_planner.models import (
     Critique,
     ImplementationPlan,
+    OpenQuestion,
     PlanRevision,
     ResearchSummary,
     Source,
@@ -59,6 +61,7 @@ __all__ = [
     "DOMAINS",
     "DomainProfile",
     "ImplementationPlan",
+    "OpenQuestion",
     "PlanRevision",
     "ProgressReporter",
     "ResearchSummary",

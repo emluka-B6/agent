@@ -6,10 +6,12 @@ import sys
 
 from issue_planner.config import (
     DEFAULT_MAX_SUBTASKS,
+    MAX_OPEN_QUESTION_OPTIONS,
     OVERSIZED_IMPLEMENTATION_PROMPT_CHARS,
     TARGET_IMPLEMENTATION_PROMPT_CHARS,
 )
-from issue_planner.models import ImplementationPlan, SubTask
+from issue_planner.models import ImplementationPlan, OpenQuestion, SubTask
+from issue_planner.questions import normalize_key
 
 
 def break_dependency_cycles(subtasks: list[SubTask]) -> list[SubTask]:
@@ -78,6 +80,70 @@ def topological_order(subtasks: list[SubTask]) -> list[SubTask]:
     return ordered
 
 
+def normalize_open_questions(
+    questions: list[OpenQuestion],
+) -> list[OpenQuestion]:
+    """Trim, deduplicate, and cap the options of the plan's open questions.
+
+    A question must stay answerable in one step, so the options are capped at
+    ``MAX_OPEN_QUESTION_OPTIONS``. ``recommended`` is snapped to one of the
+    options (the first one when the model named something else), which keeps
+    the plan executable without an answer.
+    """
+    normalized: list[OpenQuestion] = []
+    seen: set[str] = set()
+    for question in questions:
+        text = " ".join(str(question.question).split()).strip()
+        key = normalize_key(text)
+        if not key or key in seen:
+            print(
+                f"warning: dropped a blank or repeated open question: {text!r}.",
+                file=sys.stderr,
+            )
+            continue
+        seen.add(key)
+
+        options: list[str] = []
+        option_keys: set[str] = set()
+        for option in question.options:
+            label = " ".join(str(option).split()).strip()
+            option_key = normalize_key(label)
+            if not option_key or option_key in option_keys:
+                continue
+            if len(options) == MAX_OPEN_QUESTION_OPTIONS:
+                print(
+                    f"warning: open question '{text}' has more than "
+                    f"{MAX_OPEN_QUESTION_OPTIONS} options; the rest were dropped.",
+                    file=sys.stderr,
+                )
+                break
+            option_keys.add(option_key)
+            options.append(label)
+
+        recommended = " ".join(str(question.recommended or "").split()).strip()
+        if recommended and normalize_key(recommended) not in option_keys:
+            print(
+                f"warning: open question '{text}' recommends '{recommended}', "
+                "which is not one of its options; using the first option.",
+                file=sys.stderr,
+            )
+            recommended = ""
+        if not recommended and options:
+            recommended = options[0]
+
+        normalized.append(
+            question.model_copy(
+                update={
+                    "question": text,
+                    "options": options,
+                    "recommended": recommended,
+                    "answer": (question.answer or "").strip() or None,
+                }
+            )
+        )
+    return normalized
+
+
 def normalize_plan(plan: ImplementationPlan) -> ImplementationPlan:
     """Repair duplicate IDs, unknown dependencies, and dependency order."""
     seen: set[str] = set()
@@ -120,7 +186,12 @@ def normalize_plan(plan: ImplementationPlan) -> ImplementationPlan:
         cleaned.append(task.model_copy(update={"depends_on": dependencies}))
 
     acyclic = break_dependency_cycles(cleaned)
-    return plan.model_copy(update={"subtasks": topological_order(acyclic)})
+    return plan.model_copy(
+        update={
+            "subtasks": topological_order(acyclic),
+            "open_questions": normalize_open_questions(plan.open_questions),
+        }
+    )
 
 
 def plan_warnings(plan: ImplementationPlan) -> list[str]:

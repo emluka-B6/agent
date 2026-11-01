@@ -13,7 +13,7 @@ import pytest
 from issue_planner import graph as graph_module
 from issue_planner.budget import RunBudget
 from issue_planner.graph import run_agent
-from issue_planner.models import Critique, WorkflowState
+from issue_planner.models import Critique, OpenQuestion, WorkflowState
 from issue_planner.nodes import route_start
 from issue_planner.output import build_document, document_status
 from issue_planner.progress import ProgressReporter
@@ -24,6 +24,7 @@ from issue_planner.resume import (
 )
 
 GENERATED_AT = "2026-10-25T12:22:40+00:00"
+ANSWERED_AT = "2026-10-31T10:00:00+00:00"
 
 
 def artifact_document(**overrides: Any) -> dict[str, Any]:
@@ -600,3 +601,324 @@ def test_cli_reports_an_artifact_that_cannot_be_resumed(
     assert exit_code == 2
     assert captured.out == ""
     assert "error: Resume artifact not found" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Open questions and human answers
+# ---------------------------------------------------------------------------
+def open_question(**overrides: Any) -> dict[str, Any]:
+    """Return an ``open_questions`` entry shaped like the artifact."""
+    question: dict[str, Any] = {
+        "question": "Which database should the service use in production?",
+        "options": ["SQLite", "PostgreSQL"],
+        "recommended": "SQLite",
+        "answer": None,
+        "answered_at": None,
+    }
+    question.update(overrides)
+    return question
+
+
+def make_open_question() -> OpenQuestion:
+    return OpenQuestion.model_validate(open_question())
+
+
+def install_fake_run_agent(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Replace ``run_agent`` and record the arguments it receives."""
+    captured: dict[str, Any] = {}
+
+    def fake_run_agent(**kwargs: Any) -> WorkflowState:
+        captured.update(kwargs)
+        state = dict(kwargs["initial_state"] or {})
+        state["issue"] = kwargs["issue"]
+        state["domain"] = "software"
+        state["evaluations"] = kwargs["max_iterations"]
+        state["approved"] = False
+        return state  # type: ignore[return-value]
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr("agent.build_model", lambda provider, model: object())
+    monkeypatch.setattr("agent.run_agent", fake_run_agent)
+    return captured
+
+
+def resume_with_questions(
+    tmp_path: Path, *questions: dict[str, Any]
+) -> list[str]:
+    """Write an artifact with open questions and return the resume arguments."""
+    write_artifact(tmp_path, open_questions=list(questions) or [open_question()])
+    return [
+        "--resume",
+        str(tmp_path),
+        "--max-iterations",
+        "1",
+        "--skip-research",
+        "--output-dir",
+        str(tmp_path),
+    ]
+
+
+def test_load_resume_state_reads_the_free_text_questions_of_older_artifacts(
+    tmp_path: Path,
+) -> None:
+    path = write_artifact(tmp_path, open_questions=["Which database?"])
+
+    resume = load_resume_state(path)
+
+    assert resume.plan.open_questions[0].question == "Which database?"
+    assert resume.plan.open_questions[0].options == []
+    assert resume.plan.open_questions[0].answer is None
+
+
+def test_load_resume_state_keeps_answers_that_are_already_recorded(
+    tmp_path: Path,
+) -> None:
+    path = write_artifact(
+        tmp_path,
+        open_questions=[
+            open_question(answer="PostgreSQL", answered_at=ANSWERED_AT)
+        ],
+    )
+
+    resume = load_resume_state(path)
+
+    assert resume.plan.open_questions[0].answer == "PostgreSQL"
+    assert resume.plan.open_questions[0].answered_at == ANSWERED_AT
+
+
+def test_cli_answers_a_question_by_number(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent import main
+
+    argv = resume_with_questions(tmp_path)
+    captured = install_fake_run_agent(monkeypatch)
+
+    exit_code = main(argv + ["--answer", "1=2"])
+
+    captured_io = capsys.readouterr()
+    assert exit_code == 0
+    question = captured["initial_state"]["plan"].open_questions[0]
+    assert question.answer == "PostgreSQL"
+    assert question.answered_at is not None
+    assert "info: 1 open question(s) answered" in captured_io.err
+    assert captured_io.out.strip().endswith(".json")
+
+
+def test_cli_reads_answers_from_a_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent import main
+
+    argv = resume_with_questions(tmp_path)
+    captured = install_fake_run_agent(monkeypatch)
+    answers = tmp_path / "answers.json"
+    answers.write_text(
+        json.dumps({open_question()["question"]: "PostgreSQL"}), encoding="utf-8"
+    )
+
+    exit_code = main(argv + ["--answers", str(answers)])
+
+    assert exit_code == 0
+    assert (
+        captured["initial_state"]["plan"].open_questions[0].answer == "PostgreSQL"
+    )
+
+
+def test_cli_prompts_for_answers_on_a_terminal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent import main
+
+    argv = resume_with_questions(tmp_path)
+    captured = install_fake_run_agent(monkeypatch)
+    monkeypatch.setattr(
+        "agent.sys.stdin", type("FakeTTY", (), {"isatty": lambda _: True})()
+    )
+    monkeypatch.setattr("builtins.input", lambda: "2")
+
+    exit_code = main(argv)
+
+    captured_io = capsys.readouterr()
+    assert exit_code == 0
+    assert (
+        captured["initial_state"]["plan"].open_questions[0].answer == "PostgreSQL"
+    )
+    assert "1 open question(s) need a human decision" in captured_io.err
+    assert "1) SQLite (recommended)" in captured_io.err
+
+
+def test_cli_skips_the_prompt_with_skip_questions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent import main
+
+    argv = resume_with_questions(tmp_path)
+    captured = install_fake_run_agent(monkeypatch)
+    monkeypatch.setattr(
+        "agent.sys.stdin", type("FakeTTY", (), {"isatty": lambda _: True})()
+    )
+
+    def unexpected_input() -> str:
+        raise AssertionError("input() must not be called with --skip-questions")
+
+    monkeypatch.setattr("builtins.input", unexpected_input)
+
+    exit_code = main(argv + ["--skip-questions"])
+
+    assert exit_code == 0
+    assert captured["initial_state"]["plan"].open_questions[0].answer is None
+
+
+def test_cli_prints_the_pending_questions_when_it_does_not_prompt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent import main
+
+    argv = resume_with_questions(tmp_path)
+    install_fake_run_agent(monkeypatch)
+
+    exit_code = main(argv)
+
+    captured_io = capsys.readouterr()
+    assert exit_code == 0
+    assert (
+        "1. Which database should the service use in production?"
+        in captured_io.err
+    )
+    assert "1) SQLite (recommended)" in captured_io.err
+    assert "--answers FILE or --answer QUESTION=ANSWER" in captured_io.err
+
+
+def test_cli_reports_an_unknown_question_number(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent import main
+
+    argv = resume_with_questions(tmp_path)
+    install_fake_run_agent(monkeypatch)
+
+    exit_code = main(argv + ["--answer", "3=PostgreSQL"])
+
+    captured_io = capsys.readouterr()
+    assert exit_code == 2
+    assert captured_io.out == ""
+    assert "error: no open question matches '3'" in captured_io.err
+
+
+def test_cli_rejects_answers_without_resume(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent import main
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    exit_code = main(["Add rate limiting", "--answer", "1=2"])
+
+    captured_io = capsys.readouterr()
+    assert exit_code == 2
+    assert captured_io.out == ""
+    assert (
+        "error: --answers and --answer can only be used with --resume."
+        in captured_io.err
+    )
+
+
+def test_cli_reports_a_malformed_answer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent import main
+
+    argv = resume_with_questions(tmp_path)
+    install_fake_run_agent(monkeypatch)
+
+    exit_code = main(argv + ["--answer", "1"])
+
+    captured_io = capsys.readouterr()
+    assert exit_code == 2
+    assert "error: invalid --answer '1'" in captured_io.err
+
+
+def test_finished_markdown_artifact_does_not_suggest_an_impossible_resume(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent import _report_open_questions
+
+    _report_open_questions([open_question()], tmp_path / "output-abc123.md")
+
+    captured_io = capsys.readouterr()
+    assert "1) SQLite (recommended)" in captured_io.err
+    assert "--resume" not in captured_io.err
+    assert "Only JSON artifacts can be resumed" in captured_io.err
+
+
+def test_cli_reports_the_questions_of_a_finished_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent import main
+    from issue_planner.models import ImplementationPlan, SubTask
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr("agent.build_model", lambda provider, model: object())
+
+    plan = ImplementationPlan(
+        summary="Harden the public API",
+        subtasks=[
+            SubTask(
+                id="T1",
+                title="Add a token bucket",
+                description="Introduce a token bucket limiter.",
+                implementation_prompt="Add a token bucket limiter with tests.",
+                acceptance_criteria=["Requests above the limit are rejected"],
+                verification="pytest tests/test_ratelimit.py",
+            )
+        ],
+        open_questions=[make_open_question()],
+        definition_of_done=["Rate limiting is enabled"],
+    )
+
+    def fake_run_agent(**kwargs: Any) -> WorkflowState:
+        return {
+            "issue": kwargs["issue"],
+            "domain": kwargs["domain"],
+            "plan": plan,
+            "critique": Critique(approved=True, summary="Ready"),
+            "evaluations": 1,
+            "approved": True,
+        }
+
+    monkeypatch.setattr("agent.run_agent", fake_run_agent)
+
+    exit_code = main(
+        [
+            "Add rate limiting",
+            "--skip-research",
+            "--output-dir",
+            str(tmp_path),
+        ]
+    )
+
+    captured_io = capsys.readouterr()
+    assert exit_code == 0
+    output_path = captured_io.out.strip()
+    assert "Open questions (decisions only a human can make" in captured_io.err
+    assert "1) SQLite (recommended)" in captured_io.err
+    assert f"--resume {output_path} --answers answers.json" in captured_io.err
+    document = json.loads(Path(output_path).read_text(encoding="utf-8"))
+    assert document["open_questions"][0]["question"].startswith("Which database")

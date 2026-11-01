@@ -59,6 +59,25 @@ export const reviewSchema = z
   .passthrough();
 export type Review = z.infer<typeof reviewSchema>;
 
+// Question objects carry one to four candidate answers; older artifacts stored
+// a bare string, which is upgraded here so the viewer reads both.
+export const openQuestionSchema = z.union([
+  z.string().transform((question) => ({
+    question,
+    options: [] as string[],
+    recommended: "",
+    answer: null as string | null,
+  })),
+  z.object({
+      question: z.string(),
+      options: z.array(z.string()).default([]),
+      recommended: z.string().default(""),
+      answer: z.string().nullable().optional(),
+    })
+    .passthrough(),
+]);
+export type OpenQuestion = z.infer<typeof openQuestionSchema>;
+
 export const planDocumentSchema = z
   .object({
     issue: z.string().default(""),
@@ -68,7 +87,7 @@ export const planDocumentSchema = z
     summary: z.string().default(""),
     subtasks: z.array(subTaskSchema),
     assumptions: z.array(z.string()).default([]),
-    open_questions: z.array(z.string()).default([]),
+    open_questions: z.array(openQuestionSchema).default([]),
     definition_of_done: z.array(z.string()).default([]),
     review: reviewSchema.nullable().optional(),
     research: researchSchema.optional(),

@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -49,6 +50,7 @@ from issue_planner.llm import (
 from issue_planner.models import (
     Critique,
     ImplementationPlan,
+    OpenQuestion,
     ResearchSummary,
     Source,
     SubTask,
@@ -63,6 +65,14 @@ from issue_planner.output import (
     write_output,
 )
 from issue_planner.progress import ProgressReporter
+from issue_planner.questions import (
+    apply_answers,
+    format_questions,
+    load_answer_file,
+    parse_answer_arguments,
+    pending_questions,
+    prompt_answers,
+)
 from issue_planner.resume import ResumeState, load_resume_state, resolve_resume_path
 
 __all__ = [
@@ -70,6 +80,7 @@ __all__ = [
     "DEFAULT_DOMAIN",
     "DOMAIN_KEYS",
     "ImplementationPlan",
+    "OpenQuestion",
     "ProgressReporter",
     "ResearchSummary",
     "ResumeState",
@@ -121,6 +132,43 @@ def _model_name_for(provider: str, requested: str | None) -> str:
     return resolve_model_name(provider, requested)
 
 
+def _apply_cli_answers(
+    plan: ImplementationPlan, args: argparse.Namespace
+) -> ImplementationPlan:
+    """Return ``plan`` with the answers supplied on the command line."""
+    entries: list[tuple[str, str]] = []
+    if args.answers is not None:
+        entries.extend(load_answer_file(args.answers))
+    entries.extend(parse_answer_arguments(args.answer or []))
+    return apply_answers(plan, entries)
+
+
+def _report_open_questions(items: Iterable[object], output_path: Path) -> None:
+    """Print the pending questions of a finished artifact and how to answer them."""
+    try:
+        questions = [OpenQuestion.model_validate(item) for item in items]
+    except Exception:  # noqa: BLE001 - reporting must never fail a finished run
+        return
+    if not pending_questions(questions):
+        return
+    print("", file=sys.stderr)
+    print(format_questions(questions), file=sys.stderr)
+    if output_path.suffix.lower() in {".md", ".markdown"}:
+        print(
+            "info: these decisions do not block execution. Only JSON artifacts "
+            "can be resumed, so answer them from a run that writes JSON.",
+            file=sys.stderr,
+        )
+        return
+    print(
+        "info: these decisions do not block execution; answer them with\n"
+        f"  python agent.py --resume {output_path} --answers answers.json\n"
+        '  where answers.json is {"<question number or text>": "<answer>"}, or\n'
+        f"  python agent.py --resume {output_path} --answer 1=2 --answer 2=text",
+        file=sys.stderr,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agent.py",
@@ -139,6 +187,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  python agent.py --issue-file issue.md --format markdown --skip-research\n"
             "  python agent.py \"Add structured logging\" --output-dir plans\n"
             "  python agent.py --resume latest --max-iterations 2\n"
+            "  python agent.py --resume latest --answer 1=2 --answer 2=PostgreSQL\n"
+            "  python agent.py --resume latest --answers answers.json\n"
             "  python agent.py --list-models\n"
         ),
     )
@@ -178,6 +228,38 @@ def build_parser() -> argparse.ArgumentParser:
             "plan, review, and research come from the artifact, and "
             "--max-iterations/--max-research-calls are added to the budget that "
             "artifact already spent."
+        ),
+    )
+    parser.add_argument(
+        "--answers",
+        type=Path,
+        metavar="FILE",
+        help=(
+            "Answer the open questions of the resumed artifact. FILE is a JSON "
+            "object that maps a question number or text to an answer, or a "
+            "list of {question, answer} objects. An answer may be an option "
+            "number, an option text, or free text. Requires --resume."
+        ),
+    )
+    parser.add_argument(
+        "--answer",
+        action="append",
+        default=[],
+        metavar="QUESTION=ANSWER",
+        help=(
+            "Answer one open question of the resumed artifact, for example "
+            "--answer 1=2 or --answer 2=PostgreSQL; QUESTION is the number "
+            "shown in the artifact. Repeat the flag for several questions. "
+            "Requires --resume."
+        ),
+    )
+    parser.add_argument(
+        "--skip-questions",
+        action="store_true",
+        help=(
+            "Do not ask for answers to the open questions of a resumed run. "
+            "Without this flag the prompt appears only when stdin is a "
+            "terminal and neither --answers nor --answer was given."
         ),
     )
     parser.add_argument(
@@ -269,6 +351,13 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
+
+    if resume is None and (args.answers is not None or args.answer):
+        print(
+            "error: --answers and --answer can only be used with --resume.",
+            file=sys.stderr,
+        )
+        return 2
 
     if resume is not None:
         if args.issue or args.issue_file:
@@ -372,6 +461,51 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
 
+    initial_state: WorkflowState | None = None
+    if resume is not None:
+        try:
+            answered_plan = _apply_cli_answers(resume.plan, args)
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
+        interactive = (
+            not args.skip_questions
+            and args.answers is None
+            and not args.answer
+            and sys.stdin.isatty()
+        )
+        pending = pending_questions(answered_plan.open_questions)
+        if pending and interactive:
+            print(
+                f"info: {len(pending)} open question(s) need a human decision; "
+                "the plan runs without an answer, so press Enter to skip one.",
+                file=sys.stderr,
+            )
+            answered_plan = apply_answers(
+                answered_plan, prompt_answers(answered_plan)
+            )
+        elif pending:
+            print(format_questions(answered_plan.open_questions), file=sys.stderr)
+            print(
+                "info: answer them with --answers FILE or --answer "
+                "QUESTION=ANSWER; the plan runs without them.",
+                file=sys.stderr,
+            )
+
+        answered = sum(
+            1 for question in answered_plan.open_questions if question.answer
+        )
+        if answered:
+            print(
+                f"info: {answered} open question(s) answered; the planner will "
+                "apply the decisions to the plan.",
+                file=sys.stderr,
+            )
+
+        initial_state = resume.as_initial_state()
+        initial_state["plan"] = answered_plan
+
     generated_at = datetime.now(timezone.utc).isoformat()
     try:
         output_path, output_format = unique_output_path(
@@ -409,7 +543,7 @@ def main(argv: list[str] | None = None) -> int:
             max_retries=args.max_retries,
             domain=domain,
             reporter=reporter,
-            initial_state=resume.as_initial_state() if resume is not None else None,
+            initial_state=initial_state,
         )
     except Exception as exc:  # noqa: BLE001 - report agent failures cleanly
         print(f"error: agent failed: {exc}", file=sys.stderr)
@@ -448,6 +582,7 @@ def main(argv: list[str] | None = None) -> int:
         f"runs={metadata['runs']}).",
         file=sys.stderr,
     )
+    _report_open_questions(document.get("open_questions") or [], output_path)
     # Keep the final stdout line machine-readable: the generated file path.
     print(output_path)
     return 0

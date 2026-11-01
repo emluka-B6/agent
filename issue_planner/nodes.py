@@ -24,6 +24,7 @@ from issue_planner.models import (
 from issue_planner.plan_editor import RemovalError, apply_revision
 from issue_planner.plan_repair import normalize_plan, plan_warnings
 from issue_planner.prompts import prompts_for
+from issue_planner.questions import format_answers
 from issue_planner.research import (
     extract_sources,
     format_research,
@@ -186,6 +187,7 @@ def planner_node(
             if current_plan is not None
             else "(none; create the first plan)"
         ),
+        human_answers=format_answers(current_plan),
         critique=(critique.model_dump_json(indent=2) if critique else "(none)"),
     )
 

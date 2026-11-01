@@ -388,7 +388,7 @@ def test_apply_revision_upserts_removes_and_replaces_fields() -> None:
     assert updated.summary == "Revised summary"
     assert updated.assumptions == ["Python 3.11"]
     assert updated.definition_of_done == ["Everything works"]
-    assert updated.open_questions == ["None"]
+    assert [question.question for question in updated.open_questions] == ["None"]
 
 
 def test_apply_revision_assigns_ids_to_unlabelled_additions() -> None:

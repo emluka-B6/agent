@@ -40,6 +40,11 @@ DEFAULT_MAX_SEARCH_RESULTS = 5
 DEFAULT_MAX_RETRIES = 3
 SUPPORTED_PROVIDERS = ("openai", "deepseek")
 
+#: Upper bound on the candidate answers of one open question. A question with
+#: more than four options cannot be answered with a single keystroke, and the
+#: planner node trims the list deterministically (``normalize_open_questions``).
+MAX_OPEN_QUESTION_OPTIONS = 4
+
 # DeepSeek's API defaults to an 8,192-token output ceiling. That is too small
 # for detailed implementation plans: the response is truncated mid tool call,
 # the JSON never parses, and LangChain silently returns no structured result.

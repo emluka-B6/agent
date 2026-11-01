@@ -10,8 +10,14 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Literal
 
-from issue_planner.models import ImplementationPlan, PlanRevision, SubTask
+from issue_planner.models import (
+    ImplementationPlan,
+    OpenQuestion,
+    PlanRevision,
+    SubTask,
+)
 from issue_planner.plan_repair import normalize_plan
+from issue_planner.questions import normalize_key
 
 RemoveStrategy = Literal["rewire", "block", "cascade"]
 
@@ -426,6 +432,41 @@ def merge_subtasks(
     return normalize_plan(plan.model_copy(update={"subtasks": subtasks}))
 
 
+def merge_answered_questions(
+    previous: list[OpenQuestion], updated: list[OpenQuestion]
+) -> list[OpenQuestion]:
+    """Keep human answers when a revision rewrites or drops their question.
+
+    An answered question is the record of a decision, so a revision may
+    rephrase the plan around it but cannot delete it. Answers are matched by
+    question text: a rewritten question keeps its answer, and a question the
+    revision dropped is appended unchanged.
+    """
+    answered = {
+        normalize_key(question.question): question
+        for question in previous
+        if (question.answer or "").strip()
+    }
+    if not answered:
+        return updated
+
+    merged: list[OpenQuestion] = []
+    present: set[str] = set()
+    for question in updated:
+        key = normalize_key(question.question)
+        present.add(key)
+        source = answered.get(key)
+        if source is not None and not (question.answer or "").strip():
+            question = question.model_copy(
+                update={"answer": source.answer, "answered_at": source.answered_at}
+            )
+        merged.append(question)
+    merged.extend(
+        question for key, question in answered.items() if key not in present
+    )
+    return merged
+
+
 def apply_revision(
     plan: ImplementationPlan, revision: PlanRevision
 ) -> ImplementationPlan:
@@ -479,7 +520,9 @@ def apply_revision(
     if revision.definition_of_done is not None:
         updates["definition_of_done"] = list(revision.definition_of_done)
     if revision.open_questions is not None:
-        updates["open_questions"] = list(revision.open_questions)
+        updates["open_questions"] = merge_answered_questions(
+            plan.open_questions, list(revision.open_questions)
+        )
 
     return normalize_plan(plan.model_copy(update=updates))
 

@@ -20,6 +20,7 @@ issue_planner/
   research.py             Search-result normalisation and prompt formatting
   plan_repair.py          Subtask ID/dependency repair and size warnings
   plan_editor.py          Subtask insert/split/merge/remove and plan revisions
+  questions.py            Answering a plan's open questions on a resumed run
   nodes.py                research / planner / critic LangGraph nodes
   graph.py                Graph assembly and run_agent()
   budget.py               Cumulative iteration/research budget across runs
@@ -35,6 +36,7 @@ tests/
   test_plan_repair.py     Dependency repair and plan size warnings
   test_prompts.py         Domain profiles and shared prompt templates
   test_progress.py        Console progress and partial artifacts
+  test_questions.py       Answering open questions on resume
   test_resume.py          Continuing an unfinished run from its artifact
   test_web.py             API tests for the viewer
   test_workflow.py        Follow-up research routing, budgets, and revisions
@@ -199,6 +201,66 @@ Only JSON artifacts can be resumed; a Markdown report is not machine-readable.
 An artifact that is still marked `"status": "running"` is rejected, because the
 interrupted run may not have written a consistent state.
 
+## Answer open questions
+
+`open_questions` lists decisions that only a human can make. They never block
+the workflow: the planner also records a `recommended` option, so a plan is
+executable while a question is still open. Every question carries one to four
+candidate answers:
+
+```json
+{
+  "open_questions": [
+    {
+      "question": "Which database should the service use in production?",
+      "options": ["SQLite", "PostgreSQL"],
+      "recommended": "SQLite",
+      "answer": null,
+      "answered_at": null
+    }
+  ]
+}
+```
+
+After a run, `agent.py` prints the pending questions and their options to
+stderr and shows how to answer them. Answers are given on a resumed run, so the
+plan, its review, and its research are reused:
+
+```bash
+# Interactive: answers are read from the terminal, Enter skips a question
+python agent.py --resume latest --max-iterations 2
+
+# Non-interactive: one flag per question, using the numbers from the artifact
+python agent.py --resume latest --answer 1=2 --answer 2=PostgreSQL
+
+# Non-interactive: a JSON file with every answer
+python agent.py --resume latest --answers answers.json
+```
+
+`answers.json` accepts a mapping from the question number or text to an answer,
+or a list that mirrors the artifact:
+
+```json
+{"1": "2", "Which database should the service use in production?": "PostgreSQL"}
+```
+
+```json
+[{"question": "1", "answer": "PostgreSQL"}]
+```
+
+An answer may be an option number (`2`), an option text (`PostgreSQL`, matched
+ignoring case and spacing), or free text, which is recorded verbatim. The
+answered question keeps its place in `open_questions` with `answer` and
+`answered_at` filled in, and the planner prompt receives the decisions so it can
+apply them to the affected subtasks. Later revisions keep answered questions
+even when the planner rewrites the plan.
+
+The prompt only appears when stdin is a terminal, and only when neither
+`--answers` nor `--answer` was given; `--skip-questions` disables it explicitly.
+A resumed run that answers questions still spends its normal budget: the planner
+revises the plan and the critic reviews it again (`--max-iterations` adds to what
+the artifact already spent).
+
 ## Domains
 
 The workflow and output contract are shared by every domain. The selected
@@ -289,6 +351,11 @@ python agent.py "Add rate limiting" --max-research-calls 1
 # the budgets are added to what the artifact already spent
 python agent.py --resume latest --max-iterations 2
 python agent.py --resume outputs/output-4f1c9a7d2b3e.json --max-iterations 3
+
+# Answer the open questions of a resumed plan (numbers come from the artifact)
+python agent.py --resume latest --answer 1=2 --answer 2=PostgreSQL
+python agent.py --resume latest --answers answers.json
+python agent.py --resume latest --skip-questions --max-iterations 2
 
 # Skip web research
 python agent.py "Add structured logging" --skip-research
@@ -460,7 +527,15 @@ The default JSON artifact contains:
     }
   ],
   "assumptions": [],
-  "open_questions": [],
+  "open_questions": [
+    {
+      "question": "...",
+      "options": ["...", "..."],
+      "recommended": "...",
+      "answer": null,
+      "answered_at": null
+    }
+  ],
   "definition_of_done": [],
   "review": {
     "approved": true,
@@ -496,7 +571,11 @@ one of them:
 
 - `summary` — two to four sentences of strategy; no subtask-by-subtask recap.
 - `assumptions` — unverified premises the plan relies on, one bullet each.
-- `open_questions` — decisions only a human can make; they never block execution.
+- `open_questions` — decisions only a human can make. Each item has a
+  `question`, one to four `options`, and the `recommended` option the plan
+  assumes meanwhile, so they never block execution. `answer`/`answered_at` stay
+  `null` until a human answers them (see
+  [Answer open questions](#answer-open-questions)).
 - `definition_of_done` — a bullet list of observable, testable end-state
   conditions that prove the whole issue is solved, one condition per item.
 

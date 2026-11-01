@@ -12,6 +12,7 @@ from issue_planner.graph import run_agent
 from issue_planner.models import (
     Critique,
     ImplementationPlan,
+    OpenQuestion,
     PlanRevision,
     ResearchSummary,
     Source,
@@ -598,6 +599,84 @@ def test_planner_messages_carry_the_research_status_and_sources(
     assert "[S1] Tavily docs (https://example.com/tavily)" in rendered
     assert "limitation: Web search failed: timeout" in rendered
     assert "budget exhausted (2 of 2)" in rendered
+
+
+def test_planner_messages_carry_the_human_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_invoke_structured(
+        _model: object,
+        _schema: object,
+        _provider: str,
+        messages: object,
+        _label: str,
+        _max_retries: int,
+    ) -> PlanRevision:
+        captured["messages"] = messages
+        return PlanRevision()
+
+    monkeypatch.setattr(nodes_module, "invoke_structured", fake_invoke_structured)
+
+    plan = make_two_task_plan().model_copy(
+        update={
+            "open_questions": [
+                OpenQuestion(
+                    question="Which database should the service use?",
+                    options=["SQLite", "PostgreSQL"],
+                    recommended="SQLite",
+                    answer="PostgreSQL",
+                    answered_at="2026-10-31T10:00:00+00:00",
+                )
+            ]
+        }
+    )
+
+    planner_node(
+        make_state(plan=plan),
+        model=object(),  # type: ignore[arg-type]
+        provider="openai",
+        max_retries=1,
+    )
+
+    rendered = "\n".join(
+        str(message.content) for message in captured["messages"]  # type: ignore[union-attr]
+    )
+    assert "Human answers (fixed decisions; incorporate them):" in rendered
+    assert "- Which database should the service use?" in rendered
+    assert "Answer: PostgreSQL" in rendered
+
+
+def test_planner_messages_report_missing_human_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_invoke_structured(
+        _model: object,
+        _schema: object,
+        _provider: str,
+        messages: object,
+        _label: str,
+        _max_retries: int,
+    ) -> PlanRevision:
+        captured["messages"] = messages
+        return PlanRevision()
+
+    monkeypatch.setattr(nodes_module, "invoke_structured", fake_invoke_structured)
+
+    planner_node(
+        make_state(plan=make_two_task_plan()),
+        model=object(),  # type: ignore[arg-type]
+        provider="openai",
+        max_retries=1,
+    )
+
+    rendered = "\n".join(
+        str(message.content) for message in captured["messages"]  # type: ignore[union-attr]
+    )
+    assert "(none; no human answers were supplied)" in rendered
 
 
 def test_critic_node_receives_the_previous_review_and_the_budget(

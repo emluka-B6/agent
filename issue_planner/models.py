@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Source(BaseModel):
@@ -81,6 +81,71 @@ class SubTask(BaseModel):
     )
 
 
+class OpenQuestion(BaseModel):
+    """A decision only a human can make, with candidate answers.
+
+    The plan never waits for an answer: ``recommended`` names the option the
+    plan already assumes, so the workflow stays executable. ``answer`` is filled
+    in later, when a human answers the question through ``agent.py --resume
+    --answers`` (or the interactive prompt), and is then kept in every revision
+    as the record of that decision.
+    """
+
+    question: str = Field(
+        description=(
+            "The decision that needs a human answer, phrased as one question."
+        )
+    )
+    options: list[str] = Field(
+        default_factory=list,
+        description=(
+            "One to four mutually exclusive candidate answers, shortest useful "
+            "wording. May be empty when the decision has no natural options."
+        ),
+    )
+    recommended: str = Field(
+        default="",
+        description=(
+            "The option the plan assumes when nobody answers, so the plan stays "
+            "executable. Must repeat one of the options; empty when there are "
+            "no options."
+        ),
+    )
+    answer: str | None = Field(
+        default=None,
+        description=(
+            "The human's answer, recorded when the question is answered on a "
+            "resumed run. Free text is allowed in addition to the options."
+        ),
+    )
+    answered_at: str | None = Field(
+        default=None,
+        description="ISO timestamp of when the answer was recorded.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_plain_text(cls, value: Any) -> Any:
+        """Read the free-text form written by earlier versions.
+
+        A model can also omit a list or send a single option as a string, so
+        the mapping form is normalised before validation.
+        """
+        if isinstance(value, str):
+            return {"question": value}
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        options = data.get("options")
+        if options is None:
+            data["options"] = []
+        elif isinstance(options, str):
+            data["options"] = [options]
+        if data.get("recommended") is None:
+            data["recommended"] = ""
+        return data
+
+
 class ImplementationPlan(BaseModel):
     """The complete plan produced by the planner and reviewed by the critic."""
 
@@ -102,9 +167,13 @@ class ImplementationPlan(BaseModel):
     subtasks: list[SubTask] = Field(
         min_length=1, description="Ordered list of schedulable implementation subtasks."
     )
-    open_questions: list[str] = Field(
+    open_questions: list[OpenQuestion] = Field(
         default_factory=list,
-        description="Questions that still need a human decision, if any.",
+        description=(
+            "Decisions that only a human can make, each with one to four "
+            "candidate answers and the option the plan assumes meanwhile. They "
+            "never block execution."
+        ),
     )
     definition_of_done: list[str] = Field(
         min_length=1,
@@ -159,8 +228,12 @@ class PlanRevision(BaseModel):
             "condition per item), only when it changed."
         ),
     )
-    open_questions: list[str] | None = Field(
-        default=None, description="Replacement open questions, only when they changed."
+    open_questions: list[OpenQuestion] | None = Field(
+        default=None,
+        description=(
+            "Replacement open questions, only when they changed. Keep every "
+            "answered question and its answer."
+        ),
     )
     upsert_subtasks: list[SubTask] = Field(
         default_factory=list,

@@ -66,21 +66,53 @@ _BULLET_SECTIONS: tuple[str, ...] = (
 )
 
 
-def _item_key(item: str) -> str:
+def _item_text(item: Any) -> str:
+    """Return the text of a bullet, which may be a question object."""
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict):
+        return str(item.get("question", ""))
+    question = getattr(item, "question", None)
+    if question is not None:
+        return str(question)
+    return str(item)
+
+
+def _item_key(item: Any) -> str:
     """Return a comparison key for a bullet (case, spacing, punctuation free)."""
-    return re.sub(r"[\W_]+", " ", str(item).casefold()).strip()
+    return re.sub(r"[\W_]+", " ", _item_text(item).casefold()).strip()
 
 
-def _unique_items(items: Iterable[str], seen: set[str]) -> list[str]:
+def _question_fields(item: Any) -> dict[str, Any]:
+    """Normalise a question written as text, a mapping, or a model."""
+    if isinstance(item, str):
+        return {"question": item, "options": [], "recommended": "", "answer": None}
+    if isinstance(item, dict):
+        data = dict(item)
+    else:
+        dump = getattr(item, "model_dump", None)
+        data = dump() if callable(dump) else {}
+    answer = str(data.get("answer") or "").strip()
+    return {
+        "question": str(data.get("question", "")),
+        "options": [str(option) for option in data.get("options") or []],
+        "recommended": str(data.get("recommended") or ""),
+        "answer": answer or None,
+    }
+
+
+def _unique_items(items: Iterable[Any], seen: set[str]) -> list[Any]:
     """Strip items and drop empty or already ``seen`` ones, updating ``seen``."""
-    unique: list[str] = []
+    unique: list[Any] = []
     for item in items:
-        text = str(item).strip()
+        if isinstance(item, str):
+            item = item.strip()
+        text = _item_text(item).strip()
         key = _item_key(text)
         if not key or key in seen:
             continue
         seen.add(key)
-        unique.append(text)
+        unique.append(item)
     return unique
 
 
@@ -91,13 +123,14 @@ def dedupe_sections(document: dict[str, Any]) -> dict[str, Any]:
     and the open questions distinct, but structured output can still restate the
     same item in two places. Exact repeats (ignoring case, punctuation, and
     spacing) are dropped here so that every item appears in exactly one section.
-    The definition of done wins, then assumptions, then open questions.
+    An open question is compared by its ``question`` text. The definition of
+    done wins, then assumptions, then open questions.
     """
     seen: set[str] = set()
     for key in _BULLET_SECTIONS:
         if key not in document:
             continue
-        original = [str(item).strip() for item in (document.get(key) or [])]
+        original = list(document.get(key) or [])
         unique = _unique_items(original, seen)
         # The plan schema requires at least one definition-of-done entry, so an
         # all-blank list is left as it is instead of becoming empty.
@@ -294,8 +327,22 @@ def render_markdown(document: dict[str, Any]) -> str:
     lines.append("")
 
     lines.extend(["## Open questions", ""])
-    if document["open_questions"]:
-        lines.extend(f"- {item}" for item in document["open_questions"])
+    questions = document.get("open_questions") or []
+    if questions:
+        for index, item in enumerate(questions, start=1):
+            question = _question_fields(item)
+            lines.append(f"{index}. {question['question']}")
+            for option_index, option in enumerate(question["options"], start=1):
+                recommended = question["recommended"]
+                marker = (
+                    " (recommended)"
+                    if recommended and _item_key(option) == _item_key(recommended)
+                    else ""
+                )
+                lines.append(f"   {option_index}. {option}{marker}")
+            if question["answer"]:
+                lines.append(f"   **Answer:** {question['answer']}")
+            lines.append("")
     else:
         lines.append("- none")
     lines.append("")

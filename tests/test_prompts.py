@@ -70,6 +70,7 @@ def test_shared_templates_keep_the_same_input_variables(domain: str) -> None:
         "research",
         "sources",
         "research_status",
+        "human_answers",
         "current_plan",
         "critique",
     }

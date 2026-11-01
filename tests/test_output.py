@@ -12,7 +12,12 @@ from typing import Any
 import pytest
 
 from issue_planner.config import DEFAULT_OUTPUT_DIR
-from issue_planner.models import ImplementationPlan, SubTask, WorkflowState
+from issue_planner.models import (
+    ImplementationPlan,
+    OpenQuestion,
+    SubTask,
+    WorkflowState,
+)
 from issue_planner.output import (
     build_document,
     dedupe_sections,
@@ -239,3 +244,46 @@ def test_empty_definition_of_done_renders_none_in_markdown() -> None:
     document["definition_of_done"] = []
 
     assert "## Definition of done\n\n- none" in render_markdown(document)
+
+
+def test_question_objects_are_compared_by_their_text() -> None:
+    plan = make_plan(
+        assumptions=["Single user only."],
+        open_questions=[OpenQuestion(question="single user only")],
+    )
+
+    document = plan_document(plan)
+
+    assert document["assumptions"] == ["Single user only."]
+    assert document["open_questions"] == []
+
+
+def test_open_questions_render_with_their_options_in_markdown() -> None:
+    plan = make_plan(
+        open_questions=[
+            OpenQuestion(
+                question="Which database?",
+                options=["SQLite", "PostgreSQL"],
+                recommended="SQLite",
+                answer="PostgreSQL",
+                answered_at="2026-10-31T10:00:00+00:00",
+            )
+        ]
+    )
+
+    rendered = render_markdown(plan_document(plan))
+
+    assert (
+        "## Open questions\n\n"
+        "1. Which database?\n"
+        "   1. SQLite (recommended)\n"
+        "   2. PostgreSQL\n"
+        "   **Answer:** PostgreSQL\n"
+    ) in rendered
+
+
+def test_legacy_question_text_still_renders_in_markdown() -> None:
+    document = plan_document(make_plan())
+    document["open_questions"] = ["Which database?"]
+
+    assert "## Open questions\n\n1. Which database?\n" in render_markdown(document)

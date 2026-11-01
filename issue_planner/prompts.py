@@ -58,7 +58,7 @@ Keep each implementation_prompt under about $implementation_prompt_budget charac
 Top-level fields (keep them distinct and never restate one in another):
 - summary: two to four sentences about the strategy and why it fits the issue; no subtask-by-subtask recap and no completion checklist.
 - assumptions: unverified premises the plan depends on, one per item and stated as a premise; no tasks, checks, or questions.
-- open_questions: decisions that only a human can make; none of them may block execution.
+- open_questions: decisions that only a human can make, one object per decision with question (one sentence), options (one to four mutually exclusive candidate answers, shortest useful wording), and recommended (the option the plan already assumes when nobody answers; it must repeat one of the options, so the plan stays executable). None of them may block execution.
 - definition_of_done: a bullet list of observable, testable end-state conditions that prove the whole issue is solved, one condition per item; no assumptions, no questions, and no per-subtask acceptance criteria.
 
 Rules:
@@ -70,6 +70,7 @@ Rules:
 - Keep the scope aligned with the issue; do not add unrelated work.
 - Never include secrets, credentials, or private personal data.
 - When a critique is provided, address every blocking issue and preserve the correct parts of the previous plan.
+- When human answers are supplied, treat them as fixed decisions: apply them to the affected subtasks, state a decision that constrains the plan in assumptions, and keep every answered question in open_questions with its answer.
 - When a blocking issue needs external or current information that is missing from the research summary, put up to three focused web search queries in research_requests. Leave research_requests empty when the existing research is sufficient; the request states how much research budget remains.
 """
 
@@ -78,6 +79,7 @@ _PLANNER_REVISION_RULES = """
 Revision mode:
 - The plan already exists. Return only what changes: put new or modified subtasks in upsert_subtasks (reuse an id to replace it, use a new id to add one), list deleted ids in remove_subtasks, and omit untouched subtasks entirely.
 - Leave a field at null when it does not change; an empty list clears it.
+- Keep every answered open question as it is (question, options, recommended, answer): it records a human decision and must not be replaced or removed.
 - Change only what the critique or the new research requires.
 """
 
@@ -102,7 +104,7 @@ Check:
 - no repeated content between summary, assumptions, open_questions, and definition_of_done, and a definition_of_done written as one observable condition per bullet;
 - realistic $artifact_noun and scope;
 - self-contained implementation prompts that respect the size policy;
-- open_questions contains only decisions that never block execution.$critic_checks
+- open_questions contains only decisions that never block execution, each with one to four options and a recommended option that repeats one of them, and every answered entry keeps its answer;$critic_checks
 
 Set approved to true only if there are no blocking issues.
 Blocking issues must be concrete and actionable: name the affected subtask ids and the required action (rewrite, split, merge, remove, add, or research).
@@ -167,6 +169,7 @@ def build_prompts(domain: str = DEFAULT_DOMAIN) -> PromptSet:
             "Issue:\n{issue}\n\nResearch summary:\n{research}\n\n"
             "Research sources (titles and URLs):\n{sources}\n\n"
             "Research status:\n{research_status}\n\n"
+            "Human answers (fixed decisions; incorporate them):\n{human_answers}\n\n"
             "Current plan:\n{current_plan}\n\n"
             "Critique to address:\n{critique}",
         ),
@@ -178,6 +181,7 @@ def build_prompts(domain: str = DEFAULT_DOMAIN) -> PromptSet:
             "Issue:\n{issue}\n\nResearch summary:\n{research}\n\n"
             "Research sources (titles and URLs):\n{sources}\n\n"
             "Research status:\n{research_status}\n\n"
+            "Human answers (fixed decisions; incorporate them):\n{human_answers}\n\n"
             "Current plan:\n{current_plan}\n\n"
             "Critique to address:\n{critique}",
         ),
