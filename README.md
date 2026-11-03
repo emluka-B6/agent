@@ -50,11 +50,11 @@ schemas), so existing code such as `from agent import run_agent` keeps working.
 
 ```
 research -> planner -> critic
-    ^          ^          |
-    |          |          |
-    |          +----------+   needs improvement
-    |
-    +----- planner requested more research (bounded)
+   ^          | ^         |
+   |          | |         |
+   |          | +---------+   needs improvement
+   |          |
+   +----------+   more research
 ```
 
 1. **research** optionally calls Tavily and condenses the results into facts,
@@ -79,7 +79,7 @@ research -> planner -> critic
    Plans follow a size policy. A subtask is `small` (one file or artifact, one
    behaviour), `medium` (two to five files or artifacts), or `large` (more than
    five files, a schema or contract change, or several independent behaviours);
-   `large` work must be split, a plan holds at most `DEFAULT_MAX_SUBTASKS` (8)
+   `large` work must be split, a plan holds at most `DEFAULT_MAX_SUBTASKS` (10)
    subtasks, and each `implementation_prompt` targets about 1,500 characters.
    The planner node warns on stderr when a generated plan exceeds those limits,
    and the critic blocks plans that are not sized accordingly.
@@ -566,25 +566,96 @@ The default JSON artifact contains:
 }
 ```
 
-The plan-level sections have separate jobs, so an item should appear in exactly
-one of them:
+### Subtask fields
 
-- `summary` — two to four sentences of strategy; no subtask-by-subtask recap.
-- `assumptions` — unverified premises the plan relies on, one bullet each.
-- `open_questions` — decisions only a human can make. Each item has a
-  `question`, one to four `options`, and the `recommended` option the plan
-  assumes meanwhile, so they never block execution. `answer`/`answered_at` stay
-  `null` until a human answers them (see
-  [Answer open questions](#answer-open-questions)).
-- `definition_of_done` — a bullet list of observable, testable end-state
-  conditions that prove the whole issue is solved, one condition per item.
+Every entry in `subtasks` is one schedulable unit of work. The fields differ in
+who consumes them, and only one of them is meant for an executor:
 
-`definition_of_done` is the only completion checklist. It does not repeat
-assumptions, open questions, or the per-subtask `acceptance_criteria`. If the
-planner still emits the same item twice, the artifact builder drops the later
-duplicate (ignoring case, punctuation, and spacing) and keeps it in the first
-section it belongs to: the definition of done wins over assumptions, and
-assumptions win over open questions.
+| Field | Meaning | Who uses it |
+| --- | --- | --- |
+| `id`, `title` | stable identifier (`T1`, `T2`, ...) and a short imperative title | `depends_on`, the scheduler, the viewer |
+| `description` | the change in prose, with its context and scope | the reader; it is not sent to the executor |
+| `implementation_prompt` | a self-contained prompt with the goal, constraints, expected artifacts, and acceptance criteria (about 1,500 characters) | the execution LLM; this is the field you send |
+| `depends_on` | ids that must be finished first | the scheduler and the dependency graph |
+| `files` | files, documents, or configurations expected to change; may be empty when the domain has no concrete paths | the executor and the reviewer |
+| `acceptance_criteria` | observable conditions that prove this subtask is done, one per item | the executor (self-check) and the critic |
+| `verification` | the concrete commands, tests, calculations, or manual checks | the executor; the starting point for the per-subtask check |
+| `complexity` | `small`, `medium`, or `large`; `large` is a plan defect because it must be split | the planner and the critic size policy |
+| `risks` | known risks and edge cases of this subtask, one per item | the reader and the executor |
+
+`acceptance_criteria` and `verification` close one subtask: they are the working
+checks an executor runs while implementing, so "the endpoint returns 429 after
+ten requests per second" belongs there, next to the command that proves it.
+
+`risks` is advisory. It collects failure modes and edge cases; it is not a work
+item and it does not change what an executor does. A risk that needs
+implementation must also appear as work — a subtask, an acceptance criterion, or
+a verification step — because the critic blocks on work (scope, sizing,
+dependencies, acceptance criteria, verification), not on warnings. Read the risks
+before starting a subtask and treat the unmitigated ones as material for the next
+revision or the next run.
+
+### Plan-level sections
+
+The four plan-level sections have separate jobs, so an item should appear in
+exactly one of them, and each one expects a different reaction from the reader:
+
+| Section | Meaning | What you do with it |
+| --- | --- | --- |
+| `summary` | two to four sentences of strategy and why it fits the issue; no subtask-by-subtask recap | orient yourself; nothing to act on |
+| `assumptions` | unverified premises the plan relies on, one bullet each | confirm them before execution; a false premise invalidates the subtasks built on it |
+| `open_questions` | decisions only a human can make, one to four `options` each, plus the `recommended` option the plan assumes meanwhile | answer the ones that matter; `answer`/`answered_at` stay `null` until then (see [Answer open questions](#answer-open-questions)) |
+| `definition_of_done` | observable, testable end-state conditions that prove the whole issue is solved, one condition per item | use it as the final acceptance checklist once every subtask is done |
+
+#### Assumptions
+
+An assumption is a premise, not a question and not a task: "the service already
+has a Redis instance", "the issue covers the Python client only", "the tax
+profile stays configurable". The planner states them so the plan reads as a
+whole, and the workflow never verifies them. There is no `answer` field and no
+CLI flag for assumptions, because a premise is either already implied by the
+plan or it is a decision that belongs in `open_questions`.
+
+In practice:
+
+- **Read them first.** Each one marks a place where the plan could be
+  confidently wrong, so they are the fastest way to notice that a plan solved a
+  different problem than the one you have.
+- **Leave a correct premise alone.** If it matches your reality, the subtasks
+  and their prompts are already built on it and nothing else is needed.
+- **Correct a wrong premise at the input, not in the prompts.** A false premise
+  invalidates every subtask that relies on it. If a decision stands behind it,
+  answer the matching `open_questions` entry on a resumed run — a free-text
+  answer is recorded verbatim, the planner applies it to the affected subtasks,
+  and the accepted decision is restated as an assumption. If no question covers
+  it, start a new run with a corrected issue statement. Editing the
+  `implementation_prompt` of a single subtask keeps the rest of the plan built on
+  the false premise.
+- **Do not park work here.** If a premise requires implementation, the plan is
+  missing a subtask, and the critic can only see the gap when it is stated as
+  work.
+
+`research.summary.assumptions` is a different list with the same name: it holds
+what the web search could not verify ("the snippets do not describe the KSeF
+API"). That is a statement about the evidence rather than about the plan. When
+one of those items matters for execution, raise the research budget
+(`--max-research-calls 2`) so the planner can request a follow-up search, or
+keep it in mind while implementing.
+
+#### Definition of done
+
+`definition_of_done` is the only completion checklist, and it belongs to the
+whole issue rather than to a subtask. Read it as the final acceptance pass a
+human (or an acceptance reviewer) runs once the plan is implemented: every item
+is an observable end state, not a command. The per-subtask `verification` field
+holds the commands; `definition_of_done` answers the different question of
+whether the issue itself is solved.
+
+The sections do not repeat each other. If the planner still emits the same item
+twice, the artifact builder drops the later duplicate (ignoring case,
+punctuation, and spacing) and keeps it in the first section it belongs to: the
+definition of done wins over assumptions, and assumptions win over open
+questions.
 
 `metadata.evaluations` records how many critic reviews the whole analysis spent,
 and `metadata.max_iterations` the cumulative bound. The same applies to
