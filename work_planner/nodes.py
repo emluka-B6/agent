@@ -7,13 +7,13 @@ from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
-from issue_planner.config import (
+from work_planner.config import (
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_MAX_RESEARCH_CALLS,
     MAX_FOLLOW_UP_QUERIES,
 )
-from issue_planner.llm import as_model, invoke_structured, invoke_with_retry
-from issue_planner.models import (
+from work_planner.llm import as_model, invoke_structured, invoke_with_retry
+from work_planner.models import (
     Critique,
     ImplementationPlan,
     PlanRevision,
@@ -21,11 +21,11 @@ from issue_planner.models import (
     Source,
     WorkflowState,
 )
-from issue_planner.plan_editor import RemovalError, apply_revision
-from issue_planner.plan_repair import normalize_plan, plan_warnings
-from issue_planner.prompts import prompts_for
-from issue_planner.questions import format_answers
-from issue_planner.research import (
+from work_planner.plan_editor import RemovalError, apply_revision
+from work_planner.plan_repair import normalize_plan, plan_warnings
+from work_planner.prompts import prompts_for
+from work_planner.questions import format_answers
+from work_planner.research import (
     extract_sources,
     format_research,
     format_research_questions,
@@ -72,12 +72,12 @@ def research_node(
 ) -> dict[str, Any]:
     """Collect web evidence and condense it into a ResearchSummary.
 
-    The first invocation searches the issue. Later invocations are requested by
+    The first invocation searches the brief. Later invocations are requested by
     the planner through ``research_requests``; each request becomes a focused
     search and the new evidence is merged with the sources and summary that
     were collected earlier.
     """
-    issue = state["issue"]
+    brief = state["brief"]
     previous_research = state.get("research")
     existing_sources = list(state.get("sources") or [])
     requests = [
@@ -94,7 +94,7 @@ def research_node(
     elif search_client is None:
         research_error = "Web research is unavailable because no search client is configured."
     else:
-        queries = requests or [issue]
+        queries = requests or [brief]
         errors: list[str] = []
         for query in queries:
             found, error = _search_web(
@@ -112,7 +112,7 @@ def research_node(
     sources = merge_sources(existing_sources, new_sources)
     prompts = prompts_for(state.get("domain"))
     messages = prompts.research.format_messages(
-        issue=issue,
+        brief=brief,
         research_questions=format_research_questions(requests),
         previous_research=format_research(previous_research),
         research_data=format_sources_for_prompt(new_sources),
@@ -174,7 +174,7 @@ def planner_node(
         prompts.planner if current_plan is None else prompts.planner_revision
     )
     messages = template.format_messages(
-        issue=state["issue"],
+        brief=state["brief"],
         research=format_research(state.get("research")),
         sources=format_source_list(state.get("sources") or []),
         research_status=format_research_status(
@@ -268,7 +268,7 @@ def critic_node(
 
     prompts = prompts_for(state.get("domain"))
     messages = prompts.critic.format_messages(
-        issue=state["issue"],
+        brief=state["brief"],
         review_context=_review_context(evaluations, max_iterations),
         research=format_research(state.get("research")),
         sources=format_source_list(state.get("sources") or []),

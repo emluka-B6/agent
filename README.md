@@ -1,6 +1,6 @@
-# Issue planning agent
+# Work planning agent
 
-`agent.py` turns an issue from a selected domain (software engineering, AI,
+`agent.py` turns a brief from a selected domain (software engineering, AI,
 finance, or cybersecurity) into an ordered set of self-contained subtasks. Each
 subtask contains an `implementation_prompt` that can be sent directly to an
 execution-oriented LLM.
@@ -10,7 +10,7 @@ execution-oriented LLM.
 ```text
 agent.py                  CLI entry point (arguments, main, exit codes)
 viewer.py                 Web viewer entry point (uvicorn launcher)
-issue_planner/
+work_planner/
   __init__.py             Public re-exports
   config.py               .env loading and shared defaults
   domains.py              Domain profiles and their prompt values
@@ -58,7 +58,7 @@ research -> planner -> critic
 ```
 
 1. **research** optionally calls Tavily and condenses the results into facts,
-   constraints, and assumptions. The first call searches the issue. If the
+   constraints, and assumptions. The first call searches the brief. If the
    planner later asks for follow-up research, the research sub-agent runs the
    requested queries, merges the new sources with the earlier ones, and updates
    the summary using both. At most `--max-research-calls` research calls
@@ -114,7 +114,7 @@ for the final path):
 
 ```text
 [agent] planning started | domain=software | workflow=research sub-agent -> planner sub-agent -> critic sub-agent | max iterations=2 | max research calls=2
-[agent] issue: Add rate limiting to the public API
+[agent] brief: Add rate limiting to the public API
 [agent] partial result file: output-4f1c9a7d2b3e.json (updated after every step)
 [1/3] research sub-agent: running...
 [1/3] research sub-agent: done in 4.2s | sources=5
@@ -172,7 +172,7 @@ python agent.py --resume outputs --max-iterations 2
 
 What a resumed run keeps and what it adds:
 
-- **Kept from the artifact:** the issue, the domain, the plan (same subtask ids),
+- **Kept from the artifact:** the brief, the domain, the plan (same subtask ids),
   the research summary and sources, and the last review. The planner receives
   that review, so the revision targets the blocking issues of the previous run.
 - **Skipped:** the initial research pass. The workflow starts at the planner, and
@@ -265,7 +265,7 @@ the artifact already spent).
 
 The workflow and output contract are shared by every domain. The selected
 domain only changes the values substituted into the shared prompt templates in
-`issue_planner/prompts.py`; those values live in `issue_planner/domains.py`.
+`work_planner/prompts.py`; those values live in `work_planner/domains.py`.
 
 | `--domain` | Focus | Domain-specific guards |
 | --- | --- | --- |
@@ -276,7 +276,7 @@ domain only changes the values substituted into the shared prompt templates in
 
 The shared templates keep the same prompt variables and output schema for all
 domains. To add another area, register one more `DomainProfile` in
-`issue_planner/domains.py`; the research, planner, and critic prompts are then
+`work_planner/domains.py`; the research, planner, and critic prompts are then
 rendered from the same templates automatically.
 
 The domain can also be set with the `ISSUE_DOMAIN` environment variable. A
@@ -322,8 +322,8 @@ python agent.py "Add rate limiting to the public API"
 # Markdown output; the file is named output-<hash>.md
 python agent.py "Fix login timeout" --format markdown
 
-# Read a long issue from a file
-python agent.py --issue-file issue.md
+# Read a long brief from a file (--issue-file is a deprecated alias)
+python agent.py --brief-file brief.md
 
 # Write the artifact into a different directory (the viewer can scan it too)
 python agent.py "Add structured logging" --output-dir plans
@@ -360,8 +360,8 @@ python agent.py --resume latest --skip-questions --max-iterations 2
 # Skip web research
 python agent.py "Add structured logging" --skip-research
 
-# Read the issue from stdin
-cat issue.md | python agent.py
+# Read the brief from stdin
+cat brief.md | python agent.py
 ```
 
 Every run creates a new file, so previous results are never overwritten. The
@@ -407,7 +407,7 @@ The viewer is a small FastAPI server plus a React (Vite) frontend. It lists the
 generated JSON artifacts in a directory, renders the subtask dependency graph,
 shows every subtask and the planning context, and lets you remove subtasks while
 keeping `depends_on` consistent. Plans are identified in the picker by their
-issue text and generation time; the hashed file name is shown as a tooltip and
+brief text and generation time; the hashed file name is shown as a tooltip and
 remains the stable API identifier.
 
 ### Install
@@ -474,7 +474,7 @@ artifact atomically, and `Export` downloads the edited plan as JSON or Markdown.
 At least one subtask must remain in the plan.
 
 The viewer UI currently exposes removal, but the same UI-agnostic module
-(`issue_planner/plan_editor.py`) also provides `insert_subtask`,
+(`work_planner/plan_editor.py`) also provides `insert_subtask`,
 `split_subtask`, and `merge_subtasks` for tooling that needs to change the
 number of subtasks. They keep ids and `depends_on` consistent: a split chains
 the replacement parts and re-points dependents to the last part, and a merge
@@ -506,7 +506,7 @@ The default JSON artifact contains:
 
 ```json
 {
-  "issue": "...",
+  "brief": "...",
   "domain": "software",
   "generated_at": "2026-10-17T00:00:00+00:00",
   "status": "approved",
@@ -566,6 +566,22 @@ The default JSON artifact contains:
 }
 ```
 
+### Compatibility with earlier artifacts
+
+The input used to be called `issue`. Artifacts, flags, and environment variables
+from that version are still accepted, so old files keep working:
+
+| Current | Deprecated alias still read |
+| --- | --- |
+| `"brief"` (artifact field) | `"issue"` |
+| `--brief-file` | `--issue-file` |
+| `PLAN_DOMAIN` (env var) | `ISSUE_DOMAIN` |
+| `ResumeState.brief` | `ResumeState.issue` (read-only property) |
+
+New artifacts are written with `brief` only, and opening an older file in the
+viewer and saving it rewrites the field to the current name. The critic still
+reports `blocking_issues`: those are defects in a plan, not the input.
+
 ### Subtask fields
 
 Every entry in `subtasks` is one schedulable unit of work. The fields differ in
@@ -602,15 +618,15 @@ exactly one of them, and each one expects a different reaction from the reader:
 
 | Section | Meaning | What you do with it |
 | --- | --- | --- |
-| `summary` | two to four sentences of strategy and why it fits the issue; no subtask-by-subtask recap | orient yourself; nothing to act on |
+| `summary` | two to four sentences of strategy and why it fits the brief; no subtask-by-subtask recap | orient yourself; nothing to act on |
 | `assumptions` | unverified premises the plan relies on, one bullet each | confirm them before execution; a false premise invalidates the subtasks built on it |
 | `open_questions` | decisions only a human can make, one to four `options` each, plus the `recommended` option the plan assumes meanwhile | answer the ones that matter; `answer`/`answered_at` stay `null` until then (see [Answer open questions](#answer-open-questions)) |
-| `definition_of_done` | observable, testable end-state conditions that prove the whole issue is solved, one condition per item | use it as the final acceptance checklist once every subtask is done |
+| `definition_of_done` | observable, testable end-state conditions that prove the whole brief is solved, one condition per item | use it as the final acceptance checklist once every subtask is done |
 
 #### Assumptions
 
 An assumption is a premise, not a question and not a task: "the service already
-has a Redis instance", "the issue covers the Python client only", "the tax
+has a Redis instance", "the brief covers the Python client only", "the tax
 profile stays configurable". The planner states them so the plan reads as a
 whole, and the workflow never verifies them. There is no `answer` field and no
 CLI flag for assumptions, because a premise is either already implied by the
@@ -628,7 +644,7 @@ In practice:
   answer the matching `open_questions` entry on a resumed run — a free-text
   answer is recorded verbatim, the planner applies it to the affected subtasks,
   and the accepted decision is restated as an assumption. If no question covers
-  it, start a new run with a corrected issue statement. Editing the
+  it, start a new run with a corrected brief statement. Editing the
   `implementation_prompt` of a single subtask keeps the rest of the plan built on
   the false premise.
 - **Do not park work here.** If a premise requires implementation, the plan is
@@ -645,11 +661,11 @@ keep it in mind while implementing.
 #### Definition of done
 
 `definition_of_done` is the only completion checklist, and it belongs to the
-whole issue rather than to a subtask. Read it as the final acceptance pass a
+whole brief rather than to a subtask. Read it as the final acceptance pass a
 human (or an acceptance reviewer) runs once the plan is implemented: every item
 is an observable end state, not a command. The per-subtask `verification` field
 holds the commands; `definition_of_done` answers the different question of
-whether the issue itself is solved.
+whether the brief itself is solved.
 
 The sections do not repeat each other. If the planner still emits the same item
 twice, the artifact builder drops the later duplicate (ignoring case,

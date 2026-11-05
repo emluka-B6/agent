@@ -1,6 +1,6 @@
 """Shared prompt templates used by the research, planner, and critic nodes.
 
-The templates below are domain-agnostic. :mod:`issue_planner.domains` supplies
+The templates below are domain-agnostic. :mod:`work_planner.domains` supplies
 the values that specialise them for software engineering, AI, finance, and
 cybersecurity, so all domains keep the same workflow and output contract while
 receiving different roles, focus areas, verification guidance, and safety
@@ -19,15 +19,15 @@ from string import Template
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from issue_planner.config import (
+from work_planner.config import (
     DEFAULT_MAX_SUBTASKS,
     TARGET_IMPLEMENTATION_PROMPT_CHARS,
 )
-from issue_planner.domains import DEFAULT_DOMAIN, get_domain, prompt_values
+from work_planner.domains import DEFAULT_DOMAIN, get_domain, prompt_values
 
 RESEARCH_SYSTEM_TEMPLATE = Template(
     """You are a $research_role acting as a research agent.
-Extract $research_objective from the supplied web search snippets for the given issue.
+Extract $research_objective from the supplied web search snippets for the given brief.
 
 Focus areas:
 $research_focus
@@ -39,11 +39,11 @@ Rules:
 - Put anything that is not supported by the snippets in assumptions.
 - If snippets are missing or irrelevant, state that in assumptions and rely only on well-known $practice_label.
 - Be concise and $research_style.
-- Write in the same language as the issue.$research_rules"""
+- Write in the same language as the brief.$research_rules"""
 )
 
 _PLANNER_RULES = """You are a $planner_role creating $planner_objective.
-Break the issue into ordered, independently schedulable $work_unit.
+Break the brief into ordered, independently schedulable $work_unit.
 
 Focus areas:
 $planner_focus
@@ -56,10 +56,10 @@ Split every subtask you would label large. A plan has at most $max_subtasks subt
 Keep each implementation_prompt under about $implementation_prompt_budget characters: state the goal, the interfaces to use, the constraints, the expected $artifact_noun, and the acceptance criteria. Do not paste whole files.
 
 Top-level fields (keep them distinct and never restate one in another):
-- summary: two to four sentences about the strategy and why it fits the issue; no subtask-by-subtask recap and no completion checklist.
+- summary: two to four sentences about the strategy and why it fits the brief; no subtask-by-subtask recap and no completion checklist.
 - assumptions: unverified premises the plan depends on, one per item and stated as a premise; no tasks, checks, or questions.
 - open_questions: decisions that only a human can make, one object per decision with question (one sentence), options (one to four mutually exclusive candidate answers, shortest useful wording), and recommended (the option the plan already assumes when nobody answers; it must repeat one of the options, so the plan stays executable). None of them may block execution.
-- definition_of_done: a bullet list of observable, testable end-state conditions that prove the whole issue is solved, one condition per item; no assumptions, no questions, and no per-subtask acceptance criteria.
+- definition_of_done: a bullet list of observable, testable end-state conditions that prove the whole brief is solved, one condition per item; no assumptions, no questions, and no per-subtask acceptance criteria.
 
 Rules:
 - Use stable IDs such as T1, T2, T3.
@@ -67,7 +67,7 @@ Rules:
 - Dependencies must reference existing subtask IDs and must not form cycles.
 - List only $artifact_scope. Record uncertain items in assumptions, risks, or open_questions.
 - Include concrete acceptance criteria and a verification step for every subtask. $verification_hint
-- Keep the scope aligned with the issue; do not add unrelated work.
+- Keep the scope aligned with the brief; do not add unrelated work.
 - Never include secrets, credentials, or private personal data.
 - When a critique is provided, address every blocking issue and preserve the correct parts of the previous plan.
 - When human answers are supplied, treat them as fixed decisions: apply them to the affected subtasks, state a decision that constrains the plan in assumptions, and keep every answered question in open_questions with its answer.
@@ -83,7 +83,7 @@ Revision mode:
 - Change only what the critique or the new research requires.
 """
 
-_PLANNER_LANGUAGE_RULE = "- Write in the same language as the issue.$planner_rules"
+_PLANNER_LANGUAGE_RULE = "- Write in the same language as the brief.$planner_rules"
 
 PLANNER_SYSTEM_TEMPLATE = Template(_PLANNER_RULES + _PLANNER_LANGUAGE_RULE)
 
@@ -96,7 +96,7 @@ CRITIC_SYSTEM_TEMPLATE = Template(
 Evaluate whether the plan can be handed to $executor_label without further clarification.
 
 Check:
-- completeness relative to the issue;
+- completeness relative to the brief;
 - atomicity and schedulability of every subtask;
 - sizing: every subtask is small or medium, its complexity matches the described scope, and the plan has at most $max_subtasks subtasks;
 - correct dependencies and execution order;
@@ -111,7 +111,7 @@ Blocking issues must be concrete and actionable: name the affected subtask ids a
 If a previous review is supplied, confirm that every earlier blocking issue is resolved and report any regression.
 If a blocking issue depends on facts that are missing from the research summary, say so explicitly so the planner can request more research.
 Do not block on stylistic preferences or wording; block only when the plan cannot be executed as written.
-Write in the same language as the issue."""
+Write in the same language as the brief."""
 )
 
 
@@ -155,7 +155,7 @@ def build_prompts(domain: str = DEFAULT_DOMAIN) -> PromptSet:
             ("system", research_system_prompt),
             (
                 "user",
-                "Issue:\n{issue}\n\nFollow-up research questions:\n"
+                "Brief:\n{brief}\n\nFollow-up research questions:\n"
                 "{research_questions}\n\nPrevious research summary:\n"
                 "{previous_research}\n\nWeb search snippets:\n{research_data}\n\n"
                 "Search error or limitation:\n{research_error}",
@@ -166,7 +166,7 @@ def build_prompts(domain: str = DEFAULT_DOMAIN) -> PromptSet:
         ("system", planner_system_prompt),
         (
             "user",
-            "Issue:\n{issue}\n\nResearch summary:\n{research}\n\n"
+            "Brief:\n{brief}\n\nResearch summary:\n{research}\n\n"
             "Research sources (titles and URLs):\n{sources}\n\n"
             "Research status:\n{research_status}\n\n"
             "Human answers (fixed decisions; incorporate them):\n{human_answers}\n\n"
@@ -178,7 +178,7 @@ def build_prompts(domain: str = DEFAULT_DOMAIN) -> PromptSet:
         ("system", planner_revision_system_prompt),
         (
             "user",
-            "Issue:\n{issue}\n\nResearch summary:\n{research}\n\n"
+            "Brief:\n{brief}\n\nResearch summary:\n{research}\n\n"
             "Research sources (titles and URLs):\n{sources}\n\n"
             "Research status:\n{research_status}\n\n"
             "Human answers (fixed decisions; incorporate them):\n{human_answers}\n\n"
@@ -191,7 +191,7 @@ def build_prompts(domain: str = DEFAULT_DOMAIN) -> PromptSet:
             ("system", critic_system_prompt),
             (
                 "user",
-                "Issue:\n{issue}\n\nReview:\n{review_context}\n\n"
+                "Brief:\n{brief}\n\nReview:\n{review_context}\n\n"
                 "Research summary:\n{research}\n\n"
                 "Research sources (titles and URLs):\n{sources}\n\n"
                 "Research status:\n{research_status}\n\n"

@@ -8,7 +8,7 @@ __pycache__/
 
 # Web viewer
 node_modules/
-issue_planner/web/dist/
+work_planner/web/dist/
 .pytest_cache/
 *.tsbuildinfo
 # `tsc -b` output for vite.config.ts. Vite resolves vite.config.js before

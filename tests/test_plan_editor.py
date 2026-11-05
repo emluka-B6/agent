@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from issue_planner.models import ImplementationPlan, PlanRevision, SubTask
-from issue_planner.plan_editor import (
+from work_planner.models import ImplementationPlan, PlanRevision, SubTask
+from work_planner.plan_editor import (
     RemovalError,
     apply_plan_to_document,
     apply_revision,
@@ -239,7 +239,7 @@ def test_document_round_trip_preserves_extra_fields() -> None:
         make_task("T2", ("T1",)),
     )
     document = {
-        "issue": "Add rate limiting",
+        "brief": "Add rate limiting",
         "status": "approved",
         "approved": True,
         "review": {"approved": True, "summary": "ok"},
@@ -250,7 +250,7 @@ def test_document_round_trip_preserves_extra_fields() -> None:
     parsed = plan_from_document(document)
     updated = apply_plan_to_document(document, parsed)
 
-    assert updated["issue"] == "Add rate limiting"
+    assert updated["brief"] == "Add rate limiting"
     assert updated["review"] == {"approved": True, "summary": "ok"}
     assert updated["metadata"] == {"provider": "openai"}
     assert [task["id"] for task in updated["subtasks"]] == ["T1", "T2"]
@@ -258,7 +258,7 @@ def test_document_round_trip_preserves_extra_fields() -> None:
 
 def test_plan_from_document_requires_plan_fields() -> None:
     with pytest.raises(ValueError, match="missing plan field"):
-        plan_from_document({"issue": "x"})
+        plan_from_document({"brief": "x"})
 
 
 def test_next_task_id_continues_the_numbering() -> None:

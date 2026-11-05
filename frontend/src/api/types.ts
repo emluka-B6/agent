@@ -78,9 +78,13 @@ export const openQuestionSchema = z.union([
 ]);
 export type OpenQuestion = z.infer<typeof openQuestionSchema>;
 
+// Older artifacts stored the brief under "issue". Both spellings are read and
+// normalised to "brief", so the viewer opens old and new files while always
+// writing the current shape back.
 export const planDocumentSchema = z
   .object({
-    issue: z.string().default(""),
+    brief: z.string().default(""),
+    issue: z.string().optional(),
     generated_at: z.string().optional(),
     status: z.string().default("unknown"),
     approved: z.boolean().default(false),
@@ -93,12 +97,16 @@ export const planDocumentSchema = z
     research: researchSchema.optional(),
     metadata: z.record(z.unknown()).default({}),
   })
-  .passthrough();
+  .passthrough()
+  .transform(({ issue, ...document }) => ({
+    ...document,
+    brief: document.brief || issue || "",
+  }));
 export type PlanDocument = z.infer<typeof planDocumentSchema>;
 
 export const planSummarySchema = z.object({
   name: z.string(),
-  // Human-readable identifier (the issue text) added by newer viewers.
+  // Human-readable identifier (the brief text) added by newer viewers.
   title: z.string().optional(),
   size: z.number(),
   modified_at: z.string(),

@@ -16,7 +16,7 @@ function shortTimestamp(value: string | null | undefined): string {
   return match ? `${match[1]} ${match[2]}` : "";
 }
 
-/** Prefer the issue text over the hashed file name in the picker. */
+/** Prefer the brief text over the hashed file name in the picker. */
 function planLabel(plan: PlanSummary): string {
   const title = plan.title?.trim() || plan.name;
   const timestamp = shortTimestamp(plan.generated_at ?? plan.modified_at);

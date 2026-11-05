@@ -11,14 +11,14 @@ from typing import Any
 
 import pytest
 
-from issue_planner.config import DEFAULT_OUTPUT_DIR
-from issue_planner.models import (
+from work_planner.config import DEFAULT_OUTPUT_DIR
+from work_planner.models import (
     ImplementationPlan,
     OpenQuestion,
     SubTask,
     WorkflowState,
 )
-from issue_planner.output import (
+from work_planner.output import (
     build_document,
     dedupe_sections,
     render_markdown,
@@ -52,7 +52,7 @@ def make_plan(**overrides: Any) -> ImplementationPlan:
 
 def plan_state(plan: ImplementationPlan) -> WorkflowState:
     return {
-        "issue": "Add rate limiting to the public API",
+        "brief": "Add rate limiting to the public API",
         "research": None,
         "sources": [],
         "research_error": None,
@@ -74,7 +74,7 @@ def plan_document(plan: ImplementationPlan) -> dict[str, Any]:
 
 def make_document(**overrides: Any) -> dict[str, Any]:
     document: dict[str, Any] = {
-        "issue": "Add rate limiting to the public API",
+        "brief": "Add rate limiting to the public API",
         "generated_at": "2026-10-18T09:31:00+00:00",
         "status": "approved",
         "subtasks": [],
@@ -146,10 +146,10 @@ def test_resamples_when_the_hash_is_already_taken(
 ) -> None:
     document = make_document()
     fixed = uuid.UUID(int=0)
-    monkeypatch.setattr("issue_planner.output.uuid.uuid4", lambda: fixed)
+    monkeypatch.setattr("work_planner.output.uuid.uuid4", lambda: fixed)
 
     seed = "\x00".join(
-        (document["issue"], document["generated_at"], fixed.hex, "0")
+        (document["brief"], document["generated_at"], fixed.hex, "0")
     )
     digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]
     taken = tmp_path / f"output-{digest}.json"
@@ -231,12 +231,28 @@ def test_repeated_and_blank_items_are_removed_within_a_section() -> None:
     assert document["definition_of_done"] == ["Tests pass", "Docs updated"]
 
 
+def test_document_stores_the_brief_under_its_own_key() -> None:
+    document = plan_document(make_plan())
+
+    assert document["brief"] == "Add rate limiting to the public API"
+    # Only the current spelling is written; "issue" is read for older files.
+    assert "issue" not in document
+
+
 def test_definition_of_done_renders_as_a_markdown_bullet_list() -> None:
     plan = make_plan(definition_of_done=["Tests pass", "Docs updated"])
 
     rendered = render_markdown(plan_document(plan))
 
     assert "## Definition of done\n\n- Tests pass\n- Docs updated" in rendered
+
+
+def test_markdown_renders_the_brief_section() -> None:
+    document = plan_document(make_plan())
+
+    rendered = render_markdown(document)
+
+    assert "## Brief\n\nAdd rate limiting to the public API" in rendered
 
 
 def test_empty_definition_of_done_renders_none_in_markdown() -> None:

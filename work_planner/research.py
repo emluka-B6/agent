@@ -6,7 +6,7 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
-from issue_planner.models import ResearchSummary, Source
+from work_planner.models import ResearchSummary, Source
 
 
 def format_research(research: ResearchSummary | None) -> str:

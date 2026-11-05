@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from langchain_core.runnables import RunnableLambda
 
-from agent import main
-from issue_planner.config import (
+from agent import build_parser, main
+from work_planner.config import (
     DEEPSEEK_MAX_OUTPUT_TOKENS,
     DEFAULT_MODELS,
     MODEL_ENV_VARS,
     SUPPORTED_MODELS,
     SUPPORTED_PROVIDERS,
 )
-from issue_planner.llm import (
+from work_planner.llm import (
     StructuredOutputError,
     as_model,
     build_model,
@@ -24,7 +25,7 @@ from issue_planner.llm import (
     normalize_provider,
     resolve_model_name,
 )
-from issue_planner.models import ImplementationPlan, SubTask
+from work_planner.models import ImplementationPlan, SubTask
 
 EXPECTED_OPENAI_MODELS = {
     "gpt-5",
@@ -161,7 +162,7 @@ def test_model_catalog_lists_every_supported_model() -> None:
             assert model in catalog
 
 
-def test_cli_lists_models_without_an_issue(capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_lists_models_without_a_brief(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--list-models"]) == 0
 
     captured = capsys.readouterr()
@@ -169,6 +170,20 @@ def test_cli_lists_models_without_an_issue(capsys: pytest.CaptureFixture[str]) -
     assert "deepseek-v4-pro" in captured.out
     assert "gpt-6.1-sol" in captured.out
     assert captured.err == ""
+
+
+def test_cli_reads_the_brief_from_a_file_and_keeps_the_legacy_flag(
+    tmp_path: Path,
+) -> None:
+    brief_path = tmp_path / "brief.md"
+    brief_path.write_text("Add rate limiting to the public API", encoding="utf-8")
+
+    for flag in ("--brief-file", "--issue-file"):
+        args = build_parser().parse_args([flag, str(brief_path)])
+
+        # --issue-file is a deprecated alias of --brief-file.
+        assert args.brief_file == brief_path
+        assert args.brief is None
 
 
 def test_cli_terminates_on_an_unsupported_model(
@@ -292,7 +307,7 @@ def test_invoke_structured_explains_a_truncated_response() -> None:
 def test_invoke_structured_retries_a_missing_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("issue_planner.llm.time.sleep", lambda _delay: None)
+    monkeypatch.setattr("work_planner.llm.time.sleep", lambda _delay: None)
     raw = SimpleNamespace(
         response_metadata={"finish_reason": "tool_calls"},
         usage_metadata={"output_tokens": 100},

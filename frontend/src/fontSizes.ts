@@ -37,7 +37,7 @@ export const FONT_KINDS: Array<keyof FontSizes> = ["ui", "code", "graph"];
 
 export const DEFAULT_FONT_SIZES: FontSizes = { ui: 14, code: 12, graph: 12 };
 
-const STORAGE_KEY = "issue-plan-viewer:font-sizes";
+const STORAGE_KEY = "work-planner:font-sizes";
 
 export function clampFontSize(kind: keyof FontSizes, value: number): number {
   const { min, max } = FONT_SIZE_LIMITS[kind];

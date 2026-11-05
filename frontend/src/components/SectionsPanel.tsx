@@ -84,7 +84,7 @@ export default function SectionsPanel({
     <section className="sections" aria-label="Plan context">
       <Section title="Summary" open>
         <p>{document.summary || "—"}</p>
-        <p className="muted">Issue: {document.issue || "—"}</p>
+        <p className="muted">Brief: {document.brief || "—"}</p>
       </Section>
 
       <Section title={`Assumptions (${document.assumptions.length})`}>

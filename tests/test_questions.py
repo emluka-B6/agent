@@ -9,15 +9,15 @@ from typing import Any
 
 import pytest
 
-from issue_planner.models import (
+from work_planner.models import (
     ImplementationPlan,
     OpenQuestion,
     PlanRevision,
     SubTask,
 )
-from issue_planner.plan_editor import apply_revision
-from issue_planner.plan_repair import normalize_open_questions, normalize_plan
-from issue_planner.questions import (
+from work_planner.plan_editor import apply_revision
+from work_planner.plan_repair import normalize_open_questions, normalize_plan
+from work_planner.questions import (
     apply_answers,
     find_question,
     format_answers,

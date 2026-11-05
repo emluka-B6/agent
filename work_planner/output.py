@@ -12,10 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from issue_planner.budget import RunBudget
-from issue_planner.config import DEFAULT_MAX_RESEARCH_CALLS, DEFAULT_OUTPUT_DIR
-from issue_planner.domains import DEFAULT_DOMAIN
-from issue_planner.models import WorkflowState
+from work_planner.budget import RunBudget
+from work_planner.config import DEFAULT_MAX_RESEARCH_CALLS, DEFAULT_OUTPUT_DIR
+from work_planner.domains import DEFAULT_DOMAIN
+from work_planner.models import WorkflowState
 
 #: Prefix and suffix used for automatically generated artifact names.
 OUTPUT_PREFIX = "output"
@@ -165,7 +165,7 @@ def build_document(
     research = state.get("research")
 
     document = {
-        "issue": state.get("issue", ""),
+        "brief": state.get("brief", ""),
         "domain": state.get("domain", DEFAULT_DOMAIN),
         "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
         "status": document_status(state, run_budget.max_iterations),
@@ -220,7 +220,7 @@ def build_progress_document(
     completed = list(completed_stages)
 
     document = {
-        "issue": state.get("issue", ""),
+        "brief": state.get("brief", ""),
         "domain": state.get("domain", DEFAULT_DOMAIN),
         "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
         "status": RUNNING_STATUS,
@@ -268,9 +268,9 @@ def render_markdown(document: dict[str, Any]) -> str:
         f"**Approved:** {'yes' if document['approved'] else 'no'}",
         f"**Domain:** {document.get('domain', DEFAULT_DOMAIN)}",
         "",
-        "## Issue",
+        "## Brief",
         "",
-        document["issue"],
+        document["brief"],
         "",
         "## Summary",
         "",
@@ -465,7 +465,7 @@ def unique_output_path(
 ) -> tuple[Path, str]:
     """Return an unused ``output-<hash>.<ext>`` path and its format.
 
-    The hash covers the issue, the generation timestamp, and a random nonce, so
+    The hash covers the brief, the generation timestamp, and a random nonce, so
     running the agent twice never reuses (and therefore never overwrites) an
     existing artifact. ``requested_format="auto"`` falls back to JSON because
     there is no user-supplied file extension to inspect.
@@ -476,12 +476,13 @@ def unique_output_path(
 
     suffix = _FORMAT_SUFFIXES[output_format]
     directory = Path(output_dir).expanduser()
-    issue = str(document.get("issue", ""))
+    # Artifacts written before the rename stored the brief under "issue".
+    brief = str(document.get("brief") or document.get("issue") or "")
     generated_at = str(document.get("generated_at", ""))
 
     for attempt in range(100):
         seed = "\x00".join(
-            (issue, generated_at, uuid.uuid4().hex, str(attempt))
+            (brief, generated_at, uuid.uuid4().hex, str(attempt))
         )
         digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[
             :OUTPUT_HASH_LENGTH

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""AI issue-planning agent (CLI entry point).
+"""AI work-planning agent (CLI entry point).
 
-The agent accepts an issue from a selected domain (software engineering, AI,
+The agent accepts a brief from a selected domain (software engineering, AI,
 finance, or cybersecurity), optionally researches it on the web, turns it into
 an ordered list of self-contained subtasks, and asks a critic to review the
 plan. The final artifact is written to a uniquely named JSON or Markdown file
@@ -10,11 +10,11 @@ be scheduled to an execution-oriented LLM and repeated runs never overwrite an
 earlier plan.
 
 This module keeps the command-line interface. The implementation lives in the
-``issue_planner`` package; the public names are re-exported here so existing
+``work_planner`` package; the public names are re-exported here so existing
 ``import agent`` code keeps working.
 
 An unfinished run (for example ``status=max_iterations_reached``) can be
-continued with ``--resume``: the previous artifact supplies the issue, domain,
+continued with ``--resume``: the previous artifact supplies the brief, domain,
 plan, review, and research, and the iteration/research budgets are extended
 instead of being reset.
 """
@@ -30,8 +30,8 @@ from pathlib import Path
 
 from langchain_tavily import TavilySearch
 
-from issue_planner.budget import RunBudget
-from issue_planner.config import (
+from work_planner.budget import RunBudget
+from work_planner.config import (
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_MAX_RESEARCH_CALLS,
     DEFAULT_MAX_RETRIES,
@@ -39,15 +39,15 @@ from issue_planner.config import (
     DEFAULT_OUTPUT_DIR,
     SUPPORTED_PROVIDERS,
 )
-from issue_planner.domains import DEFAULT_DOMAIN, DOMAIN_KEYS, get_domain
-from issue_planner.graph import build_graph, run_agent
-from issue_planner.llm import (
+from work_planner.domains import DEFAULT_DOMAIN, DOMAIN_KEYS, get_domain
+from work_planner.graph import build_graph, run_agent
+from work_planner.llm import (
     build_model,
     format_model_catalog,
     normalize_provider,
     resolve_model_name,
 )
-from issue_planner.models import (
+from work_planner.models import (
     Critique,
     ImplementationPlan,
     OpenQuestion,
@@ -56,7 +56,7 @@ from issue_planner.models import (
     SubTask,
     WorkflowState,
 )
-from issue_planner.output import (
+from work_planner.output import (
     build_document,
     build_progress_document,
     document_status,
@@ -64,8 +64,8 @@ from issue_planner.output import (
     unique_output_path,
     write_output,
 )
-from issue_planner.progress import ProgressReporter
-from issue_planner.questions import (
+from work_planner.progress import ProgressReporter
+from work_planner.questions import (
     apply_answers,
     format_questions,
     load_answer_file,
@@ -73,7 +73,7 @@ from issue_planner.questions import (
     pending_questions,
     prompt_answers,
 )
-from issue_planner.resume import ResumeState, load_resume_state, resolve_resume_path
+from work_planner.resume import ResumeState, load_resume_state, resolve_resume_path
 
 __all__ = [
     "Critique",
@@ -108,22 +108,23 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # CLI helpers
 # ---------------------------------------------------------------------------
-def _resolve_issue(args: argparse.Namespace) -> str:
-    if args.issue_file:
-        path = args.issue_file.expanduser()
+def _resolve_brief(args: argparse.Namespace) -> str:
+    if args.brief_file:
+        path = args.brief_file.expanduser()
         text = path.read_text(encoding="utf-8")
-    elif args.issue:
-        text = args.issue
+    elif args.brief:
+        text = args.brief
     elif not sys.stdin.isatty():
         text = sys.stdin.read()
     else:
         raise ValueError(
-            "No issue provided. Pass it as an argument, use --issue-file, or pipe it via stdin."
+            "No brief provided. Pass it as an argument, use --brief-file, "
+            "or pipe it via stdin."
         )
 
     text = text.strip()
     if not text:
-        raise ValueError("The issue must not be empty.")
+        raise ValueError("The brief must not be empty.")
     return text
 
 
@@ -173,7 +174,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agent.py",
         description=(
-            "Turn an issue from software engineering, AI, finance, or cybersecurity "
+            "Turn a brief from software engineering, AI, finance, or cybersecurity "
             "into an ordered set of self-contained subtasks that can be scheduled "
             "to an execution LLM."
         ),
@@ -184,7 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  python agent.py \"Audit a RAG assistant for prompt injection\" --domain ai\n"
             "  python agent.py \"Build a rebalancing checklist for a three-fund portfolio\" --domain finance\n"
             "  python agent.py \"Harden the public API against the OWASP API Top 10\" --domain cybersecurity\n"
-            "  python agent.py --issue-file issue.md --format markdown --skip-research\n"
+            "  python agent.py --brief-file brief.md --format markdown --skip-research\n"
             "  python agent.py \"Add structured logging\" --output-dir plans\n"
             "  python agent.py --resume latest --max-iterations 2\n"
             "  python agent.py --resume latest --answer 1=2 --answer 2=PostgreSQL\n"
@@ -193,14 +194,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "issue",
+        "brief",
         nargs="?",
-        help="Issue or task description. If omitted, stdin is read.",
+        help="Brief or task description. If omitted, stdin is read.",
     )
     parser.add_argument(
+        "--brief-file",
         "--issue-file",
+        dest="brief_file",
         type=Path,
-        help="Read the issue from a UTF-8 text file.",
+        help=(
+            "Read the brief from a UTF-8 text file "
+            "(--issue-file is a deprecated alias)."
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -224,7 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Continue an earlier run from its JSON artifact instead of starting "
             "over. Pass a file, a directory (its newest artifact is used), or "
-            "'latest' (the newest artifact in --output-dir). The issue, domain, "
+            "'latest' (the newest artifact in --output-dir). The brief, domain, "
             "plan, review, and research come from the artifact, and "
             "--max-iterations/--max-research-calls are added to the budget that "
             "artifact already spent."
@@ -271,10 +277,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--domain",
         choices=DOMAIN_KEYS,
-        default=os.getenv("ISSUE_DOMAIN", DEFAULT_DOMAIN),
+        default=(
+            os.getenv("PLAN_DOMAIN") or os.getenv("ISSUE_DOMAIN") or DEFAULT_DOMAIN
+        ),
         help=(
-            "Issue domain: software, ai, finance, or cybersecurity "
-            "(default: ISSUE_DOMAIN or software)."
+            "Domain of the brief: software, ai, finance, or cybersecurity "
+            "(default: PLAN_DOMAIN or software; ISSUE_DOMAIN is the "
+            "deprecated name of that variable)."
         ),
     )
     parser.add_argument(
@@ -360,17 +369,17 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if resume is not None:
-        if args.issue or args.issue_file:
+        if args.brief or args.brief_file:
             print(
-                "info: --resume ignores the issue argument; the issue and the "
+                "info: --resume ignores the brief argument; the brief and the "
                 "domain are read from the artifact.",
                 file=sys.stderr,
             )
-        issue = resume.issue
+        brief = resume.brief
         domain = resume.domain
     else:
         try:
-            issue = _resolve_issue(args)
+            brief = _resolve_brief(args)
         except (OSError, ValueError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
@@ -509,7 +518,7 @@ def main(argv: list[str] | None = None) -> int:
     generated_at = datetime.now(timezone.utc).isoformat()
     try:
         output_path, output_format = unique_output_path(
-            {"issue": issue, "generated_at": generated_at},
+            {"brief": brief, "generated_at": generated_at},
             args.output_dir,
             args.format,
         )
@@ -532,7 +541,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         state = run_agent(
-            issue=issue,
+            brief=brief,
             model=model,
             provider=provider,
             search_client=search_client,

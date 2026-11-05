@@ -5,17 +5,17 @@ from __future__ import annotations
 import pytest
 
 from agent import build_parser
-from issue_planner import nodes as nodes_module
-from issue_planner.config import (
+from work_planner import nodes as nodes_module
+from work_planner.config import (
     DEFAULT_MAX_SUBTASKS,
     TARGET_IMPLEMENTATION_PROMPT_CHARS,
 )
-from issue_planner.domains import DEFAULT_DOMAIN, DOMAIN_KEYS, DOMAINS, get_domain
-from issue_planner.graph import run_agent
-from issue_planner.models import ImplementationPlan, Source, SubTask, WorkflowState
-from issue_planner.nodes import planner_node
-from issue_planner.output import build_document, render_markdown
-from issue_planner.prompts import (
+from work_planner.domains import DEFAULT_DOMAIN, DOMAIN_KEYS, DOMAINS, get_domain
+from work_planner.graph import run_agent
+from work_planner.models import ImplementationPlan, Source, SubTask, WorkflowState
+from work_planner.nodes import planner_node
+from work_planner.output import build_document, render_markdown
+from work_planner.prompts import (
     CRITIC_PROMPT,
     PLANNER_PROMPT,
     PLANNER_REVISION_PROMPT,
@@ -25,7 +25,7 @@ from issue_planner.prompts import (
     build_prompts,
     prompts_for,
 )
-from issue_planner.research import format_research_status, format_source_list
+from work_planner.research import format_research_status, format_source_list
 
 EXPECTED_DOMAINS = ("software", "ai", "finance", "cybersecurity")
 
@@ -59,14 +59,14 @@ def test_shared_templates_keep_the_same_input_variables(domain: str) -> None:
     prompts = prompts_for(domain)
 
     assert set(prompts.research.input_variables) == {
-        "issue",
+        "brief",
         "research_questions",
         "previous_research",
         "research_data",
         "research_error",
     }
     assert set(prompts.planner.input_variables) == {
-        "issue",
+        "brief",
         "research",
         "sources",
         "research_status",
@@ -78,7 +78,7 @@ def test_shared_templates_keep_the_same_input_variables(domain: str) -> None:
         prompts.planner.input_variables
     )
     assert set(prompts.critic.input_variables) == {
-        "issue",
+        "brief",
         "review_context",
         "research",
         "sources",
@@ -103,7 +103,7 @@ def test_each_domain_fills_the_shared_template_without_leftovers(domain: str) ->
         prompts.critic_system_prompt,
     ):
         assert "$" not in system_prompt
-        assert "{issue}" not in system_prompt
+        assert "{brief}" not in system_prompt
 
 
 def test_domain_specific_rules_are_rendered() -> None:
@@ -216,7 +216,7 @@ def test_research_status_reports_limitations_and_budget() -> None:
 
 def test_research_prompt_accepts_follow_up_context() -> None:
     messages = prompts_for(DEFAULT_DOMAIN).research.format_messages(
-        issue="Add rate limiting",
+        brief="Add rate limiting",
         research_questions="- What is the current guidance?",
         previous_research='{"recommended_approach": "Token buckets"}',
         research_data="new snippet",
@@ -258,7 +258,7 @@ def test_unknown_domains_are_rejected() -> None:
 def test_default_prompt_constants_stay_on_the_software_domain() -> None:
     software = prompts_for(DEFAULT_DOMAIN)
     messages = software.research.format_messages(
-        issue="Add caching",
+        brief="Add caching",
         research_questions="(none; initial research)",
         previous_research="(no research summary)",
         research_data="snippet",
@@ -267,7 +267,7 @@ def test_default_prompt_constants_stay_on_the_software_domain() -> None:
 
     assert RESEARCH_SYSTEM_PROMPT == software.research_system_prompt
     assert RESEARCH_PROMPT.format_messages(
-        issue="Add caching",
+        brief="Add caching",
         research_questions="(none; initial research)",
         previous_research="(no research summary)",
         research_data="snippet",
@@ -313,7 +313,7 @@ def test_planner_node_uses_the_domain_from_state(
 
     monkeypatch.setattr(nodes_module, "invoke_structured", fake_invoke_structured)
 
-    state: WorkflowState = {"issue": "Do the work", "plan": None, "critique": None}
+    state: WorkflowState = {"brief": "Do the work", "plan": None, "critique": None}
     if domain is not None:
         state["domain"] = domain
 
@@ -324,7 +324,7 @@ def test_planner_node_uses_the_domain_from_state(
 
 def test_output_records_the_selected_domain() -> None:
     state: WorkflowState = {
-        "issue": "Rebalance a portfolio",
+        "brief": "Rebalance a portfolio",
         "domain": "finance",
         "research": None,
         "sources": [],
@@ -345,7 +345,7 @@ def test_output_records_the_selected_domain() -> None:
 
 def test_output_defaults_to_the_software_domain_for_older_states() -> None:
     state: WorkflowState = {
-        "issue": "Add caching",
+        "brief": "Add caching",
         "plan": make_plan(),
         "evaluations": 0,
         "approved": False,

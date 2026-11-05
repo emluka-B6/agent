@@ -6,10 +6,10 @@ from typing import Any, cast
 
 import pytest
 
-from issue_planner import graph as graph_module
-from issue_planner import nodes as nodes_module
-from issue_planner.graph import run_agent
-from issue_planner.models import (
+from work_planner import graph as graph_module
+from work_planner import nodes as nodes_module
+from work_planner.graph import run_agent
+from work_planner.models import (
     Critique,
     ImplementationPlan,
     OpenQuestion,
@@ -19,13 +19,13 @@ from issue_planner.models import (
     SubTask,
     WorkflowState,
 )
-from issue_planner.nodes import (
+from work_planner.nodes import (
     critic_node,
     planner_node,
     research_node,
     route_after_planner,
 )
-from issue_planner.output import build_document
+from work_planner.output import build_document
 
 
 def make_plan(research_requests: list[str] | None = None) -> ImplementationPlan:
@@ -76,7 +76,7 @@ def make_two_task_plan() -> ImplementationPlan:
 
 def make_state(**overrides: Any) -> WorkflowState:
     state: dict[str, Any] = {
-        "issue": "Add rate limiting to the public API",
+        "brief": "Add rate limiting to the public API",
         "domain": "software",
         "research": None,
         "sources": [],
@@ -304,7 +304,7 @@ def capture_research_messages(
     return captured
 
 
-def test_research_node_searches_the_issue_on_the_first_call(
+def test_research_node_searches_the_brief_on_the_first_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = capture_research_messages(monkeypatch)

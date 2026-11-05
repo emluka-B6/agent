@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids an import cycle
-    from issue_planner.resume import ResumeState
+    from work_planner.resume import ResumeState
 
 
 @dataclass(frozen=True)

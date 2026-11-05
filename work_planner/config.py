@@ -1,4 +1,4 @@
-"""Environment loading and shared defaults for the issue-planning agent."""
+"""Environment loading and shared defaults for the work-planning agent."""
 
 from __future__ import annotations
 

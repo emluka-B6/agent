@@ -12,7 +12,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "../issue_planner/web/dist",
+    outDir: "../work_planner/web/dist",
     emptyOutDir: true,
   },
 });

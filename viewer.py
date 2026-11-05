@@ -3,7 +3,7 @@
 
 The viewer is a small FastAPI server. In development the React frontend runs
 under Vite (``cd frontend && npm run dev``); in production it is built into
-``issue_planner/web/dist`` and served by this same process.
+``work_planner/web/dist`` and served by this same process.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 
-from issue_planner.config import DEFAULT_OUTPUT_DIR
+from work_planner.config import DEFAULT_OUTPUT_DIR
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    from issue_planner.web.server import create_app
+    from work_planner.web.server import create_app
 
     plans_dir = args.plans_dir.expanduser().resolve()
     app = create_app(plans_dir)

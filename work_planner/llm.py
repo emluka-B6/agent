@@ -14,7 +14,7 @@ from langchain_deepseek import ChatDeepSeek
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from issue_planner.config import (
+from work_planner.config import (
     DEEPSEEK_MAX_OUTPUT_TOKENS,
     DEFAULT_MAX_RETRIES,
     DEFAULT_MODELS,

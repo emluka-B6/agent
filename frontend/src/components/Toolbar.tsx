@@ -37,7 +37,7 @@ export default function Toolbar({
   return (
     <header className="toolbar">
       <div className="brand">
-        <h1>Issue plan viewer</h1>
+        <h1>Work plan viewer</h1>
         <span className="subtitle">
           Browse, analyze, and trim generated plans
         </span>

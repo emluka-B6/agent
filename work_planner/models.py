@@ -18,7 +18,7 @@ class Source(BaseModel):
 
 
 class ResearchSummary(BaseModel):
-    """Condensed research that is relevant for resolving the issue."""
+    """Condensed research that is relevant for resolving the brief."""
 
     key_facts: list[str] = Field(
         default_factory=list,
@@ -152,7 +152,7 @@ class ImplementationPlan(BaseModel):
     summary: str = Field(
         description=(
             "Two to four sentences describing the strategy and why it fits the "
-            "issue. Do not walk through the subtasks and do not restate the "
+            "brief. Do not walk through the subtasks and do not restate the "
             "definition of done."
         )
     )
@@ -179,7 +179,7 @@ class ImplementationPlan(BaseModel):
         min_length=1,
         description=(
             "Bullet list of observable, testable end-state conditions that "
-            "prove the whole issue is solved, one condition per item. Do not "
+            "prove the whole brief is solved, one condition per item. Do not "
             "repeat assumptions, open questions, or per-subtask acceptance "
             "criteria."
         ),
@@ -295,7 +295,7 @@ class Critique(BaseModel):
 class WorkflowState(TypedDict, total=False):
     """State passed between LangGraph nodes."""
 
-    issue: str
+    brief: str
     domain: str
     research: ResearchSummary | None
     sources: list[Source]

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import sys
 
-from issue_planner.config import (
+from work_planner.config import (
     DEFAULT_MAX_SUBTASKS,
     MAX_OPEN_QUESTION_OPTIONS,
     OVERSIZED_IMPLEMENTATION_PROMPT_CHARS,
     TARGET_IMPLEMENTATION_PROMPT_CHARS,
 )
-from issue_planner.models import ImplementationPlan, OpenQuestion, SubTask
-from issue_planner.questions import normalize_key
+from work_planner.models import ImplementationPlan, OpenQuestion, SubTask
+from work_planner.questions import normalize_key
 
 
 def break_dependency_cycles(subtasks: list[SubTask]) -> list[SubTask]:

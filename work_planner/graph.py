@@ -8,15 +8,15 @@ from typing import Any, cast
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.graph import END, START, StateGraph
 
-from issue_planner.config import (
+from work_planner.config import (
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_MAX_RESEARCH_CALLS,
     DEFAULT_MAX_RETRIES,
     DEFAULT_MAX_SEARCH_RESULTS,
 )
-from issue_planner.domains import DEFAULT_DOMAIN, get_domain
-from issue_planner.models import WorkflowState
-from issue_planner.nodes import (
+from work_planner.domains import DEFAULT_DOMAIN, get_domain
+from work_planner.models import WorkflowState
+from work_planner.nodes import (
     critic_node,
     planner_node,
     research_node,
@@ -24,7 +24,7 @@ from issue_planner.nodes import (
     route_after_planner,
     route_start,
 )
-from issue_planner.progress import ProgressReporter
+from work_planner.progress import ProgressReporter
 
 
 def build_graph(
@@ -133,7 +133,7 @@ def build_graph(
 
 
 def run_agent(
-    issue: str,
+    brief: str,
     model: BaseChatModel,
     provider: str = "openai",
     search_client: Any = None,
@@ -158,9 +158,9 @@ def run_agent(
     ``max_research_calls`` cumulative across chained runs.
     """
     profile = get_domain(domain)
-    issue = issue.strip()
-    if not issue:
-        raise ValueError("The issue must not be empty.")
+    brief = brief.strip()
+    if not brief:
+        raise ValueError("The brief must not be empty.")
 
     graph = build_graph(
         model=model,
@@ -174,7 +174,7 @@ def run_agent(
         reporter=reporter,
     )
     state: WorkflowState = {
-        "issue": issue,
+        "brief": brief,
         "domain": profile.key,
         "research": None,
         "sources": [],
@@ -188,10 +188,10 @@ def run_agent(
     }
     if initial_state:
         state.update(initial_state)
-        state["issue"] = issue
+        state["brief"] = brief
         state["domain"] = profile.key
     if reporter is not None:
-        reporter.workflow_started(issue)
+        reporter.workflow_started(brief)
     try:
         final_state = graph.invoke(state)
     except Exception as exc:

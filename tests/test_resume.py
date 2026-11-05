@@ -10,14 +10,14 @@ from typing import Any
 
 import pytest
 
-from issue_planner import graph as graph_module
-from issue_planner.budget import RunBudget
-from issue_planner.graph import run_agent
-from issue_planner.models import Critique, OpenQuestion, WorkflowState
-from issue_planner.nodes import route_start
-from issue_planner.output import build_document, document_status
-from issue_planner.progress import ProgressReporter
-from issue_planner.resume import (
+from work_planner import graph as graph_module
+from work_planner.budget import RunBudget
+from work_planner.graph import run_agent
+from work_planner.models import Critique, OpenQuestion, WorkflowState
+from work_planner.nodes import route_start
+from work_planner.output import build_document, document_status
+from work_planner.progress import ProgressReporter
+from work_planner.resume import (
     latest_artifact,
     load_resume_state,
     resolve_resume_path,
@@ -30,7 +30,7 @@ ANSWERED_AT = "2026-10-31T10:00:00+00:00"
 def artifact_document(**overrides: Any) -> dict[str, Any]:
     """Return an artifact shaped like ``build_document`` output."""
     document: dict[str, Any] = {
-        "issue": "Add rate limiting to the public API",
+        "brief": "Add rate limiting to the public API",
         "domain": "software",
         "generated_at": GENERATED_AT,
         "status": "max_iterations_reached",
@@ -119,7 +119,7 @@ def test_load_resume_state_restores_the_plan_review_and_counters(
 
     resume = load_resume_state(path)
 
-    assert resume.issue == "Add rate limiting to the public API"
+    assert resume.brief == "Add rate limiting to the public API"
     assert resume.domain == "software"
     assert [task.id for task in resume.plan.subtasks] == ["T1", "T2"]
     assert resume.plan.subtasks[1].depends_on == ["T1"]
@@ -140,6 +140,22 @@ def test_load_resume_state_restores_the_plan_review_and_counters(
     assert resume.path == path.resolve()
 
 
+def test_load_resume_state_reads_an_artifact_with_the_legacy_issue_key(
+    tmp_path: Path,
+) -> None:
+    """Artifacts written before the brief rename can still be continued."""
+    document = artifact_document()
+    document["issue"] = document.pop("brief")
+    path = tmp_path / "output-legacy.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    resume = load_resume_state(path)
+
+    assert resume.brief == "Add rate limiting to the public API"
+    # ``issue`` remains a deprecated read-only alias for ``brief``.
+    assert resume.issue == resume.brief
+
+
 def test_resumed_state_keeps_the_starting_point_of_the_workflow(
     tmp_path: Path,
 ) -> None:
@@ -147,7 +163,7 @@ def test_resumed_state_keeps_the_starting_point_of_the_workflow(
 
     state = resume.as_initial_state()
 
-    assert state["issue"] == resume.issue
+    assert state["brief"] == resume.brief
     assert state["plan"] is resume.plan
     assert state["critique"] is resume.critique
     assert state["evaluations"] == 2
@@ -331,7 +347,7 @@ def test_route_start_skips_research_when_a_plan_is_restored(
     resume = load_resume_state(write_artifact(tmp_path))
 
     assert route_start(resume.as_initial_state()) == "planner"
-    assert route_start({"issue": "Add rate limiting"}) == "research"
+    assert route_start({"brief": "Add rate limiting"}) == "research"
 
 
 def test_resumed_run_spends_only_the_new_budget(
@@ -363,7 +379,7 @@ def test_resumed_run_spends_only_the_new_budget(
     monkeypatch.setattr(graph_module, "critic_node", fake_critic)
 
     final_state = run_agent(
-        resume.issue,
+        resume.brief,
         model=object(),  # type: ignore[arg-type]
         skip_research=True,
         max_iterations=budget.max_iterations,
@@ -413,7 +429,7 @@ def test_resumed_run_does_not_repeat_the_initial_research(
     monkeypatch.setattr(graph_module, "critic_node", fake_critic)
 
     final_state = run_agent(
-        resume.issue,
+        resume.brief,
         model=object(),  # type: ignore[arg-type]
         search_client=object(),
         max_iterations=3,
@@ -479,7 +495,7 @@ def test_reporter_announces_the_continuation_and_the_totals(
         generated_at=GENERATED_AT,
     )
 
-    reporter.workflow_started(resume.issue)
+    reporter.workflow_started(resume.brief)
     partial = json.loads(output_path.read_text(encoding="utf-8"))
     assert partial["metadata"]["runs"] == 2
     assert partial["metadata"]["evaluations"] == 2
@@ -537,7 +553,7 @@ def test_cli_resumes_the_newest_artifact_with_a_larger_budget(
     def fake_run_agent(**kwargs: Any) -> WorkflowState:
         captured.update(kwargs)
         state = dict(kwargs["initial_state"] or {})
-        state["issue"] = kwargs["issue"]
+        state["brief"] = kwargs["brief"]
         state["domain"] = "software"
         state["evaluations"] = kwargs["max_iterations"]
         state["approved"] = False
@@ -563,7 +579,7 @@ def test_cli_resumes_the_newest_artifact_with_a_larger_budget(
 
     captured_io = capsys.readouterr()
     assert exit_code == 0
-    assert captured["issue"] == "Add rate limiting to the public API"
+    assert captured["brief"] == "Add rate limiting to the public API"
     assert captured["domain"] == "software"
     assert captured["max_iterations"] == 4
     assert captured["max_research_calls"] == 2
@@ -630,7 +646,7 @@ def install_fake_run_agent(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     def fake_run_agent(**kwargs: Any) -> WorkflowState:
         captured.update(kwargs)
         state = dict(kwargs["initial_state"] or {})
-        state["issue"] = kwargs["issue"]
+        state["brief"] = kwargs["brief"]
         state["domain"] = "software"
         state["evaluations"] = kwargs["max_iterations"]
         state["approved"] = False
@@ -872,7 +888,7 @@ def test_cli_reports_the_questions_of_a_finished_run(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     from agent import main
-    from issue_planner.models import ImplementationPlan, SubTask
+    from work_planner.models import ImplementationPlan, SubTask
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr("agent.build_model", lambda provider, model: object())
@@ -895,7 +911,7 @@ def test_cli_reports_the_questions_of_a_finished_run(
 
     def fake_run_agent(**kwargs: Any) -> WorkflowState:
         return {
-            "issue": kwargs["issue"],
+            "brief": kwargs["brief"],
             "domain": kwargs["domain"],
             "plan": plan,
             "critique": Critique(approved=True, summary="Ready"),

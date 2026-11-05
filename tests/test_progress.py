@@ -9,17 +9,17 @@ from typing import Any, cast
 
 import pytest
 
-from issue_planner import graph as graph_module
-from issue_planner.graph import run_agent
-from issue_planner.models import (
+from work_planner import graph as graph_module
+from work_planner.graph import run_agent
+from work_planner.models import (
     Critique,
     ImplementationPlan,
     ResearchSummary,
     SubTask,
     WorkflowState,
 )
-from issue_planner.output import build_progress_document, render_markdown
-from issue_planner.progress import ProgressReporter
+from work_planner.output import build_progress_document, render_markdown
+from work_planner.progress import ProgressReporter
 
 GENERATED_AT = "2026-10-18T10:00:00+00:00"
 
@@ -52,7 +52,7 @@ def make_plan() -> ImplementationPlan:
 
 def make_state(**overrides: Any) -> WorkflowState:
     state: dict[str, Any] = {
-        "issue": "Add rate limiting to the public API",
+        "brief": "Add rate limiting to the public API",
         "domain": "software",
         "research": None,
         "sources": [],
@@ -294,7 +294,7 @@ def test_reporter_failure_does_not_abort_the_run(
     def broken_write(*args: Any, **kwargs: Any) -> None:
         raise OSError("disk full")
 
-    monkeypatch.setattr("issue_planner.progress.write_output", broken_write)
+    monkeypatch.setattr("work_planner.progress.write_output", broken_write)
 
     reporter.workflow_started("Add rate limiting")
 
@@ -404,7 +404,7 @@ def test_cli_writes_progress_then_the_final_artifact(
 
     def fake_run_agent(**kwargs: Any) -> WorkflowState:
         reporter: ProgressReporter = kwargs["reporter"]
-        reporter.workflow_started(kwargs["issue"])
+        reporter.workflow_started(kwargs["brief"])
         reporter.node_started("planner", make_state())
         reporter.node_finished("planner", final_state)
         reporter.workflow_finished(final_state)

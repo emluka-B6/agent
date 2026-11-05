@@ -21,21 +21,21 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from issue_planner.config import DEFAULT_OUTPUT_DIR
-from issue_planner.domains import DEFAULT_DOMAIN, get_domain
-from issue_planner.models import (
+from work_planner.config import DEFAULT_OUTPUT_DIR
+from work_planner.domains import DEFAULT_DOMAIN, get_domain
+from work_planner.models import (
     Critique,
     ImplementationPlan,
     ResearchSummary,
     Source,
     WorkflowState,
 )
-from issue_planner.output import RUNNING_STATUS
+from work_planner.output import RUNNING_STATUS
 
 #: Value accepted by ``--resume`` that selects the newest artifact on disk.
 RESUME_LATEST = "latest"
 
-#: Artifact naming scheme written by :func:`issue_planner.output.unique_output_path`.
+#: Artifact naming scheme written by :func:`work_planner.output.unique_output_path`.
 _ARTIFACT_GLOB = "output-*"
 _MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
@@ -45,7 +45,7 @@ class ResumeState:
     """A previous artifact restored into workflow inputs."""
 
     path: Path
-    issue: str
+    brief: str
     domain: str
     plan: ImplementationPlan
     critique: Critique | None
@@ -64,6 +64,11 @@ class ResumeState:
         """File name of the artifact, for console messages."""
         return self.path.name
 
+    @property
+    def issue(self) -> str:
+        """Deprecated alias for :attr:`brief`, kept for older callers."""
+        return self.brief
+
     def as_initial_state(self) -> WorkflowState:
         """Return the state a continued workflow starts from.
 
@@ -72,7 +77,7 @@ class ResumeState:
         across runs and in the viewer.
         """
         state: WorkflowState = {
-            "issue": self.issue,
+            "brief": self.brief,
             "domain": self.domain,
             "research": self.research,
             "sources": list(self.sources),
@@ -208,9 +213,11 @@ def load_resume_state(path: Path | str) -> ResumeState:
             "wait for the run to finish before resuming it."
         )
 
-    issue = str(document.get("issue") or "").strip()
-    if not issue:
-        raise ValueError(f"{path.name} has no issue, so there is nothing to continue.")
+    # Artifacts written before the rename stored the brief under "issue"; both
+    # spellings are accepted so earlier runs can still be continued.
+    brief = str(document.get("brief") or document.get("issue") or "").strip()
+    if not brief:
+        raise ValueError(f"{path.name} has no brief, so there is nothing to continue.")
 
     raw_domain = str(document.get("domain") or DEFAULT_DOMAIN)
     try:
@@ -260,7 +267,7 @@ def load_resume_state(path: Path | str) -> ResumeState:
 
     return ResumeState(
         path=path.resolve(),
-        issue=issue,
+        brief=brief,
         domain=domain,
         plan=plan,
         critique=critique,

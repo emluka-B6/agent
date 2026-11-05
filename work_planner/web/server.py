@@ -13,9 +13,9 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from issue_planner.config import DEFAULT_OUTPUT_DIR
-from issue_planner.output import render_markdown, write_output
-from issue_planner.plan_editor import (
+from work_planner.config import DEFAULT_OUTPUT_DIR
+from work_planner.output import render_markdown, write_output
+from work_planner.plan_editor import (
     RemovalError,
     apply_plan_to_document,
     plan_from_document,
@@ -125,7 +125,8 @@ def _one_line(text: str, limit: int = 80) -> str:
 
 def _plan_title(document: dict[str, Any], fallback: str) -> str:
     """Return a human-readable identifier for a plan artifact."""
-    for key in ("issue", "summary"):
+    # Artifacts written before the rename stored the brief under "issue".
+    for key in ("brief", "issue", "summary"):
         value = document.get(key)
         if isinstance(value, str) and value.strip():
             return _one_line(value)
@@ -153,7 +154,7 @@ def create_app(plans_dir: Path | str = DEFAULT_OUTPUT_DIR) -> FastAPI:
     root = Path(plans_dir).expanduser().resolve()
 
     app = FastAPI(
-        title="Issue plan viewer",
+        title="Work plan viewer",
         version="1.0.0",
         description="Browse, analyze, and edit generated implementation plans.",
     )

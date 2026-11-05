@@ -10,14 +10,14 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Literal
 
-from issue_planner.models import (
+from work_planner.models import (
     ImplementationPlan,
     OpenQuestion,
     PlanRevision,
     SubTask,
 )
-from issue_planner.plan_repair import normalize_plan
-from issue_planner.questions import normalize_key
+from work_planner.plan_repair import normalize_plan
+from work_planner.questions import normalize_key
 
 RemoveStrategy = Literal["rewire", "block", "cascade"]
 

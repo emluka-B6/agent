@@ -19,14 +19,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TextIO
 
-from issue_planner.budget import RunBudget
-from issue_planner.config import (
+from work_planner.budget import RunBudget
+from work_planner.config import (
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_MAX_RESEARCH_CALLS,
 )
-from issue_planner.domains import DEFAULT_DOMAIN
-from issue_planner.models import WorkflowState
-from issue_planner.output import (
+from work_planner.domains import DEFAULT_DOMAIN
+from work_planner.models import WorkflowState
+from work_planner.output import (
     build_progress_document,
     document_status,
     write_output,
@@ -185,7 +185,7 @@ class ProgressReporter:
             )
 
     # -- lifecycle ---------------------------------------------------------
-    def workflow_started(self, issue: str) -> None:
+    def workflow_started(self, brief: str) -> None:
         """Announce the run and create the first partial artifact."""
         self._started_at = time.monotonic()
         self.generated_at = self.generated_at or datetime.now(
@@ -208,8 +208,8 @@ class ProgressReporter:
                 f"this run may add {budget.iterations_available} iteration(s) "
                 f"and {budget.research_calls_available} research call(s)"
             )
-        self._emit(f"[agent] issue: {_one_line(issue)}")
-        initial_state: WorkflowState = {"issue": issue, "domain": self.domain}
+        self._emit(f"[agent] brief: {_one_line(brief)}")
+        initial_state: WorkflowState = {"brief": brief, "domain": self.domain}
         if budget.continued_run:
             # Keep the partial artifact honest about what earlier runs spent.
             initial_state["evaluations"] = budget.iterations_before

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from issue_planner.config import (
+from work_planner.config import (
     DEFAULT_MAX_SUBTASKS,
     OVERSIZED_IMPLEMENTATION_PROMPT_CHARS,
 )
-from issue_planner.models import ImplementationPlan, SubTask
-from issue_planner.plan_repair import normalize_plan, plan_warnings
+from work_planner.models import ImplementationPlan, SubTask
+from work_planner.plan_repair import normalize_plan, plan_warnings
 
 
 def make_task(

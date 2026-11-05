@@ -6,7 +6,7 @@ stays executable. This module turns those questions into something a human can
 answer when a run is continued with ``agent.py --resume``:
 
 - :func:`format_questions` renders the pending questions and their options for
-  the terminal (Markdown rendering lives in :mod:`issue_planner.output`);
+  the terminal (Markdown rendering lives in :mod:`work_planner.output`);
 - :func:`load_answer_file` and :func:`parse_answer_arguments` read answers from
   a JSON file or from repeated ``--answer QUESTION=ANSWER`` flags;
 - :func:`prompt_answers` interviews the human on a terminal;
@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, TextIO
 
-from issue_planner.models import ImplementationPlan, OpenQuestion
+from work_planner.models import ImplementationPlan, OpenQuestion
 
 
 def normalize_key(text: str) -> str:

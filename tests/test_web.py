@@ -9,9 +9,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from issue_planner.config import DEFAULT_OUTPUT_DIR
-from issue_planner.models import ImplementationPlan, SubTask
-from issue_planner.web.server import create_app
+from work_planner.config import DEFAULT_OUTPUT_DIR
+from work_planner.models import ImplementationPlan, SubTask
+from work_planner.web.server import create_app
 from viewer import build_parser as build_viewer_parser
 
 
@@ -43,7 +43,7 @@ def sample_document() -> dict[str, Any]:
         definition_of_done=["Everything works"],
     )
     return {
-        "issue": "Add rate limiting",
+        "brief": "Add rate limiting",
         "generated_at": "2026-10-17T00:00:00+00:00",
         "status": "approved",
         "approved": True,
@@ -106,10 +106,24 @@ def test_lists_plan_artifacts(client: TestClient) -> None:
     plans = response.json()["plans"]
     assert [plan["name"] for plan in plans] == ["output.json"]
     assert plans[0]["size"] > 0
-    # The viewer identifies plans by their issue text, not the file name.
+    # The viewer identifies plans by their brief text, not the file name.
     assert plans[0]["title"] == "Add rate limiting"
     assert plans[0]["generated_at"] == "2026-10-17T00:00:00+00:00"
     assert plans[0]["status"] == "approved"
+
+
+def test_plan_title_reads_an_artifact_with_the_legacy_issue_key(
+    tmp_path: Path,
+) -> None:
+    document = sample_document()
+    document["issue"] = document.pop("brief")
+    (tmp_path / "legacy.json").write_text(json.dumps(document), encoding="utf-8")
+    client = TestClient(create_app(tmp_path))
+
+    plans = client.get("/api/plans").json()["plans"]
+
+    # Artifacts written before the brief rename still get a readable label.
+    assert plans[0]["title"] == "Add rate limiting"
 
 
 def test_list_falls_back_to_file_name_for_invalid_json(tmp_path: Path) -> None:
@@ -141,7 +155,7 @@ def test_loads_a_plan(client: TestClient) -> None:
 
     assert response.status_code == 200
     document = response.json()
-    assert document["issue"] == "Add rate limiting"
+    assert document["brief"] == "Add rate limiting"
     assert [task["id"] for task in document["subtasks"]] == ["T1", "T2", "T3"]
 
 
@@ -261,7 +275,7 @@ def test_save_persists_the_edited_document(
 
 def test_save_rejects_invalid_documents(client: TestClient) -> None:
     response = client.post(
-        "/api/plans/output.json/save", json={"document": {"issue": "x"}}
+        "/api/plans/output.json/save", json={"document": {"brief": "x"}}
     )
 
     assert response.status_code == 422
@@ -291,7 +305,7 @@ def test_export_json(client: TestClient) -> None:
     assert response.headers["content-disposition"] == (
         'attachment; filename="output.json"'
     )
-    assert json.loads(response.text)["issue"] == "Add rate limiting"
+    assert json.loads(response.text)["brief"] == "Add rate limiting"
 
 
 def test_unknown_api_route_returns_404(client: TestClient) -> None:

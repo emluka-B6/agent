@@ -75,7 +75,7 @@ SOFTWARE = DomainProfile(
     ),
     work_unit="implementation subtasks",
     artifact_noun="files",
-    artifact_scope="files that are known or clearly implied by the issue",
+    artifact_scope="files that are known or clearly implied by the brief",
     verification_hint="Prefer automated tests or reproducible commands.",
     critic_role="a rigorous but constructive reviewer of implementation plans",
     executor_label="a coding LLM",
@@ -114,7 +114,7 @@ AI = DomainProfile(
     artifact_noun="artifacts",
     artifact_scope=(
         "artifacts (files, prompts, datasets, or configuration) that are known "
-        "or clearly implied by the issue"
+        "or clearly implied by the brief"
     ),
     verification_hint=(
         "Prefer offline evaluations with explicit datasets, metrics, and thresholds."
@@ -166,7 +166,7 @@ FINANCE = DomainProfile(
     artifact_noun="artifacts",
     artifact_scope=(
         "artifacts (documents, datasets, models, or checklists) that are known "
-        "or clearly implied by the issue"
+        "or clearly implied by the brief"
     ),
     verification_hint=(
         "Prefer reproducible calculations with stated data sources, dates, and assumptions."
@@ -222,7 +222,7 @@ CYBERSECURITY = DomainProfile(
     artifact_noun="artifacts",
     artifact_scope=(
         "artifacts (files, configurations, or evidence) that are known or "
-        "clearly implied by the issue"
+        "clearly implied by the brief"
     ),
     verification_hint="Prefer non-destructive checks in an authorized test environment.",
     planner_rules=(
